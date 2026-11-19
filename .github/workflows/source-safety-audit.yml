@@ -1,0 +1,130 @@
+name: Mangrove read-only safety audits against real source
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-safety:
+    name: P479 legacy contracts on committed kernel tree (read-only)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: GiulianoB-1/A526B-Mangrove-Kernel
+          ref: e2e9f3fad600489deb8fa0816245a87cef6b9b95
+          path: audit-tools
+          persist-credentials: false
+      - name: Run original stage check-only contracts on actual source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$GITHUB_WORKSPACE/source"
+          cd audit-tools
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,base64,zlib
+          p=Path('scripts/446t_apply_smmu_hold_no_nested.py.z64')
+          raw=zlib.decompress(base64.b64decode(p.read_text().strip(),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='c589faa4a829d56a394a839349b8d23f250c467522aa3781927504c2873edc37'
+          Path('scripts/446t_apply_smmu_hold_no_nested.py').write_bytes(raw)
+          p=Path('scripts/446y_apply_handoff_i2c.py.z64')
+          raw=zlib.decompress(base64.b64decode(p.read_text().strip(),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='0cd9a1eea938e8f3aa74e48d9b11b89cdfacfce3defb476e069d292774beb81d'
+          old=b'    if (!gi2c->se.wrapper)\\n        return -EPROBE_DEFER;'
+          new=b'    if (!gi2c->se.wrapper) {\\n        return -EPROBE_DEFER;\\n    }'
+          assert raw.count(old)==1
+          raw=raw.replace(old,new,1)
+          assert hashlib.sha256(raw).hexdigest()=='d9b95c7f7ee9ccc14e590d82a5d6b91f737c504babc63132d0488fc0447016b7'
+          Path('scripts/446y_apply_handoff_i2c.py').write_bytes(raw)
+          PY
+          python3 scripts/446t_apply_smmu_hold_no_nested.py --root "$ROOT" --check-only
+          while IFS= read -r stage; do
+            test -n "$stage" || continue
+            python3 "scripts/$stage.py" --root "$ROOT" --check-only
+          done <<'AUDITS'
+          446r2_bound_rpmh_tcs
+          446r2_apply_pon_wake_diag
+          446s_apply_memlat_guards
+          446s_apply_arm_memlat_pmu
+          446s_port_legacy_pmic_gpio
+          446s_apply_suspend_timing
+          446s_apply_frame_trace
+          446s_apply_gpu_slumber_trace
+          446s_apply_kgsl_smmu_runtime_pm
+          446t_early_frame_trace
+          446u_apply_atomic_request_trace
+          446u_expand_p445_store
+          446u_apply_usb_console_handover
+          446v_apply_hwc_read_trace
+          446v_apply_state_diff
+          446v_apply_pmk8350_rtc
+          446w_apply_splash_select
+          446w_apply_handoff_option_b
+          446w_apply_ttygs3
+          446w_b_apply_first_hwc_modeset
+          446w_b_apply_dsi_path_trace
+          446x_apply_stm_touch
+          446y_apply_handoff_i2c
+          446y_fix_geni_clock_unwind
+          446z_apply_qup_core_touch
+          446aa_trace_touch_drm
+          446ab_probe_fifo_and_property_epochs
+          446ac_stage_gpi
+          446ac_gsi_i2c
+          446ac_hwc_ring
+          446ad_fix_ipc_logging_compat
+          446ad_gsi_crash_guard
+          446ae_dma_wrapper_guard
+          446af_gpi_callback_abi
+          447b_restore_446ag_touch
+          447_stage_control
+          447c_quiet_frame_trace
+          447_flicker_ring
+          475_s2_cable_ro
+          476_h2_manual_1000
+          477_h3_dcp_stepped
+          477_mgbatt_shadow_stage
+          479_h4_auto
+          479_mgbatt_shadow3
+          472_a3b_lpass_codec_d54
+          447d_se7_se10_i2c
+          447d_readonly_sm5714_fg
+          447e_samsung_battery_platform
+          447e_alias_audit
+          447f_tg_i2c_nr
+          447f_sm5714_fg_child
+          447f_soc_scaling
+          447g_chg_guard
+          447g_ntc_iio
+          447g_adc5_gpio2
+          447h_adc5_tg_ntc
+          447h_ntc_retry
+          447h_tchg_ntc
+          447h_soc_policy
+          449f_chg_ntc_guard
+          450_daily_fg_and_guard_diag
+          451_daily_readonly
+          453_daily_usb_resume
+          447j_vblank_diag
+          447k_vblank_hooks
+          447i_touch_lifecycle_trace
+          447l_usb_stage_diag
+          447n_late_touch_usb_function
+          473_b1_probe_guard
+          473_b2_se1_pinctrl
+          473_b3_se1_baud
+          472_a1_tg_native
+          AUDITS
+          grep -Fxq 'CONFIG_P479_H4=y' "$ROOT/ci/build.config"
+          grep -Fxq 'CONFIG_SECURITY_SELINUX=y' "$ROOT/ci/build.config"
+          echo 'P479 read-only source contract gates PASS; charging hardware policy remains off by default; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"

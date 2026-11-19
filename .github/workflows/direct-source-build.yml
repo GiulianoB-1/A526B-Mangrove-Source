@@ -1,0 +1,108 @@
+name: Mangrove direct-source Linux 5.10 build (NO FLASH)
+on:
+  push:
+    branches: [main, 'feature/**', 'p480/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout exactly the triggering source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0  # resolve the immutable p479-baseline tag
+          persist-credentials: false
+      - name: Toolchain and exact build config from this pinned source commit
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          # P479 baseline starts with ci/build.config copied from verified P479.config.
+          # P480 and later source commits MUST update ci/build.config and
+          # ci/build-manifest.json together, in the same source commit.
+          # Only the *exact* immutable baseline commit is allowed to reseal
+          # generated IKHEADERS with the recorded P479 archive. Future P480
+          # commits always use the normal native kernel header generator.
+          test ! -e KernelSU/.git
+          test -s ci/P479-original-KernelSU.Kbuild
+          BASELINE="$(git rev-list -n 1 p479-baseline)"
+          if [ "$BASELINE" = "$GITHUB_SHA" ]; then
+            # The initial single-commit baseline uses the authentic P479
+            # ReSukiSU version, not nested KernelSU Git metadata.
+            python3 ci/p479_kernelsu_direct.py --root . --mode verify
+            grep -Fq 'KSU_COMMIT_SHA := 239e1e88-dirty' KernelSU/kernel/Kbuild
+            printf '%s  %s\n' 4613510d96312a7127828fa321fea544c23ac749d1f4ae82d9ac6b5b08167976 ci/P479-kheaders.tar.xz | sha256sum -c -
+            echo MANGROVE_P479_PIN_IKHEADERS=1 >> "$GITHUB_ENV"
+            # Reproduce P479's original compiled UTS fields, not the current
+            # GitHub runner's hostname or today's clock.
+            printf '%s  %s\n' c13afa67c23f9484f4f67348098a7ab718d938faf6fc9d5975f512979609f846 ci/P479-compile.h | sha256sum -c -
+            echo KBUILD_BUILD_VERSION=3 >> "$GITHUB_ENV"
+            echo KBUILD_BUILD_USER=runner >> "$GITHUB_ENV"
+            echo KBUILD_BUILD_HOST=runnervmy75tu >> "$GITHUB_ENV"
+            echo 'KBUILD_BUILD_TIMESTAMP=Sat Nov 14 20:43:30 UTC 2026' >> "$GITHUB_ENV"
+            echo TZ=UTC >> "$GITHUB_ENV"
+          else
+            echo MANGROVE_P479_PIN_IKHEADERS=0 >> "$GITHUB_ENV"
+          fi
+          test -s ci/build.config
+          test -s ci/build-manifest.json
+          mkdir -p out include/generated
+          cp ci/build.config out/.config
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path('ci/build-manifest.json').read_text())
+          assert manifest['strict'] is True and not manifest['missing_required']
+          # The complete source was committed directly. Never rewrite a
+          # tracked kernel header during CI; keep the exact committed source.
+          import re
+          header=Path('include/generated/a52_446s_manifest.h')
+          assert header.is_file()
+          assert re.fullmatch(r'\s*#define A52_446S_FINGERPRINT "[0-9a-f]{64}"\s*',
+                              header.read_text()), 'source manifest header invalid'
+          assert len(manifest['source_fingerprint_sha256']) == 64
+          PY
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          cmp ci/build.config out/.config
+      - name: Build checked-out source, no source patching
+        env:
+          LOCALVERSION: ''
+        run: |
+          set -Eeuo pipefail
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          test -s out/arch/arm64/boot/Image
+          test -s out/System.map
+          if [ "$MANGROVE_P479_PIN_IKHEADERS" = 1 ]; then
+            # gen_kheaders.sh strips block comments from archived compile.h.
+            # Compare fields exactly using its normalization, not raw bytes.
+            python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, re
+          archived=Path('ci/P479-compile.h').read_bytes()
+          live=Path('out/include/generated/compile.h').read_bytes()
+          assert b"/* This file is auto generated, version 3 */" in live
+          assert b"/* SMP PREEMPT */" in live
+          normalized=re.sub(rb"/\*((?!SPDX).)*?\*/",b"",live,flags=re.S)
+          assert normalized==archived and hashlib.sha256(normalized).hexdigest()=="c13afa67c23f9484f4f67348098a7ab718d938faf6fc9d5975f512979609f846"
+          print('Original P479 compile metadata reproduced (same normalized header)')
+          PY
+            printf '%s  %s\n' 26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e out/System.map | sha256sum -c -
+          fi
+          grep -Fxq 'CONFIG_P479_H4=y' out/.config
+          grep -Fxq 'CONFIG_SECURITY_SELINUX=y' out/.config
+          if [ "$MANGROVE_P479_PIN_IKHEADERS" = 1 ]; then
+            grep -aFq 'v4.2.0-rc3-239e1e88-dirty@ReSukiSU' out/arch/arm64/boot/Image
+          fi
+          grep -aFq 'P479 H4 CABLE type=' out/arch/arm64/boot/Image
+          grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' out/System.map
+          echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+          sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"

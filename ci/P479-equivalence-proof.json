@@ -1,0 +1,173 @@
+{
+  "baseline_run": 43638159300,
+  "baseline_sha": "e2e9f3fad600489deb8fa0816245a87cef6b9b95",
+  "built_image": {
+    "bytes": 66687488,
+    "sha256": "04bec126c1ae6d06e4ac43f417d1a7dfd22fa82638f995d41721f27a056a1bc7"
+  },
+  "checks": {
+    "config:CONFIG_P479_H4=y": {
+      "details": null,
+      "pass": true
+    },
+    "config:CONFIG_SECURITY_SELINUX=y": {
+      "details": null,
+      "pass": true
+    },
+    "config_exact": {
+      "details": {
+        "built_sha256": "62e75568506c051408588d2eb77fa94fb8ada762fcff997739a5b595a742d50b",
+        "difference_excerpt": []
+      },
+      "pass": true
+    },
+    "image_allocated_elf_section_sizes_identical": {
+      "details": {
+        "differences": {},
+        "rebuilt": {
+          ".altinstructions": 385416,
+          ".bss": 13372472,
+          ".builtin_fw": 0,
+          ".data": 31670240,
+          ".data..percpu": 96856,
+          ".exit.text": 39004,
+          ".head.text": 65536,
+          ".hyp.data..percpu": 3720,
+          ".hyp.reloc": 100,
+          ".hyp.rodata": 4096,
+          ".init.data": 94741,
+          ".init.text": 380564,
+          ".mmuoff.data.read": 8,
+          ".mmuoff.data.write": 24,
+          ".notes": 60,
+          ".pci_fixup": 9776,
+          ".pecoff_edata_padding": 504,
+          ".rela.dyn": 192,
+          ".relr.dyn": 54208,
+          ".rodata": 12204606,
+          ".rodata1": 0,
+          ".sbss": 0,
+          ".text": 20741480,
+          "__bug_table": 149484,
+          "__ex_table": 13992,
+          "__init_rodata": 0,
+          "__kcrctab": 29340,
+          "__kcrctab_gpl": 35416,
+          "__kcrctab_gpl_future": 0,
+          "__kcrctab_unused": 0,
+          "__kcrctab_unused_gpl": 0,
+          "__ksymtab": 88020,
+          "__ksymtab_gpl": 106248,
+          "__ksymtab_gpl_future": 0,
+          "__ksymtab_strings": 372835,
+          "__ksymtab_unused": 0,
+          "__ksymtab_unused_gpl": 0,
+          "__modver": 232,
+          "__param": 15840
+        },
+        "reference": {
+          ".altinstructions": 385416,
+          ".bss": 13372472,
+          ".builtin_fw": 0,
+          ".data": 31670240,
+          ".data..percpu": 96856,
+          ".exit.text": 39004,
+          ".head.text": 65536,
+          ".hyp.data..percpu": 3720,
+          ".hyp.reloc": 100,
+          ".hyp.rodata": 4096,
+          ".init.data": 94741,
+          ".init.text": 380564,
+          ".mmuoff.data.read": 8,
+          ".mmuoff.data.write": 24,
+          ".notes": 60,
+          ".pci_fixup": 9776,
+          ".pecoff_edata_padding": 504,
+          ".rela.dyn": 192,
+          ".relr.dyn": 54208,
+          ".rodata": 12204606,
+          ".rodata1": 0,
+          ".sbss": 0,
+          ".text": 20741480,
+          "__bug_table": 149484,
+          "__ex_table": 13992,
+          "__init_rodata": 0,
+          "__kcrctab": 29340,
+          "__kcrctab_gpl": 35416,
+          "__kcrctab_gpl_future": 0,
+          "__kcrctab_unused": 0,
+          "__kcrctab_unused_gpl": 0,
+          "__ksymtab": 88020,
+          "__ksymtab_gpl": 106248,
+          "__ksymtab_gpl_future": 0,
+          "__ksymtab_strings": 372835,
+          "__ksymtab_unused": 0,
+          "__ksymtab_unused_gpl": 0,
+          "__modver": 232,
+          "__param": 15840
+        }
+      },
+      "pass": true
+    },
+    "marker:MGBATT SHADOW COMPARE would_icl=%u would_fcc=%u": {
+      "details": null,
+      "pass": true
+    },
+    "marker:MGBATT SHADOW WRITE_BASELINE shadow_hw_writes=0": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P472 A3a Q6 afe registered rc=0": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P472 A3b CDC_TLMM_WAKE pin=%d gpio=%d irq=%d en=%d rc=%d": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P478 LPI gpio debugfs:": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P478 WCD gpio debugfs:": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P479 H4 CABLE type=%s icl=%d fcc_target=%d reason=%s": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P479 H4 FCC_SET ma=%d code=0x%02x readback=0x%02x rc=%d": {
+      "details": null,
+      "pass": true
+    },
+    "marker:P479 H4 ICL_SET ma=%d code=0x%02x readback=0x%02x rc=%d": {
+      "details": null,
+      "pass": true
+    },
+    "native_h4_linked": {
+      "details": null,
+      "pass": true
+    },
+    "reference_config_sha": {
+      "details": "62e75568506c051408588d2eb77fa94fb8ada762fcff997739a5b595a742d50b",
+      "pass": true
+    },
+    "reference_system_map_sha": {
+      "details": "26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e",
+      "pass": true
+    },
+    "system_map_symbols_and_addresses_exact": {
+      "details": {
+        "built_sha256": "26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e",
+        "difference_excerpt": []
+      },
+      "pass": true
+    }
+  },
+  "errors": [],
+  "image_hash_identical": false,
+  "original_image_sha256": "c1e29a64f611f402cdc8e5db1f42fea5b6ec9f48b19df60d5b9aa6da2d8585ae",
+  "source_restore": "phase446wx-source-backup/12271681215",
+  "status": "PASS"
+}

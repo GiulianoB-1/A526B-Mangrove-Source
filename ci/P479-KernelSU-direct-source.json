@@ -1,0 +1,13 @@
+{
+  "binary_equivalence_required": true,
+  "direct_source_kbuild_sha256": "337cb84245eee0c98011d9b0718ef3ded89979835e3e164a820dcab574e18d2b",
+  "direct_source_version_is_historical_p479": true,
+  "flash_authorized": false,
+  "original_kbuild_sha256": "08bbd04a5667f54db6ac4ca8bf7ccf4b90187971f0b7e392d667468596de3cf6",
+  "original_ksu_git_head": "239e1e8871b8fcd51a6e5b3002e0ba522fdd99fb",
+  "original_ksu_revision_count": 4471,
+  "original_p479_ksu_version_code": 35171,
+  "original_p479_ksu_version_full": "v4.2.0-rc3-239e1e88-dirty@ReSukiSU",
+  "original_submodule_git_requirement_removed": true,
+  "schema": "p479-kernelsu-direct-source-v1"
+}

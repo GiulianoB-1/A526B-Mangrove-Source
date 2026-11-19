@@ -1,0 +1,33 @@
+# P470-A3 source-only, built-in link experiment; no device-tree activation.
+config GSI
+    bool "Qualcomm GSI for Lagoon IPA 4.7"
+
+config IPA3
+    bool "Qualcomm IPA3 4.7 (P470-A3 preflight only)"
+    depends on ARCH_QCOM && QCOM_SCM && IOMMU_SUPPORT && OF && NET
+    depends on GSI
+    help
+      Built-in link experiment only. No PAS15, DTB or hardware permission.
+
+config RMNET_IPA3
+    bool "Qualcomm IPA RMNET endpoints"
+    depends on IPA3 && INET
+
+# P470_A6E_REAL_CLIENTS_MANAGER_V1
+config IPA_CLIENTS_MANAGER
+    bool "Real dataipa clients manager (P470-A6e)"
+    depends on IPA3
+    default n
+    help
+      Build the complete pinned donor ipa_clientsm.o, after ipam.o.
+      This does not enable IPA hardware by default.
+
+# P470-A6e: Lagoon feature header defines CONFIG_RNDIS_IPA=1,
+# so ipa_usb.o needs real rndis_ipa_* symbols in native Kbuild.
+config RNDIS_IPA
+    bool "Real dataipa USB RNDIS helper (P470-A6e)"
+    depends on IPA_CLIENTS_MANAGER
+    default n
+    help
+      Build the pinned donor rndisipam.o, matching Lagoon feature flags.
+      This does not arm IPA.

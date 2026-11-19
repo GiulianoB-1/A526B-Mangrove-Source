@@ -1,0 +1,271 @@
+--- a/drivers/scsi/ufs/ufshcd.c
++++ b/drivers/scsi/ufs/ufshcd.c
+@@ -10,6 +10,8 @@
+  */
+ 
+ #include <linux/async.h>
++#include <scsi/ufs/ioctl.h>
++#include <linux/a52_ack_secure_flight_recorder.h>
+ #include <linux/devfreq.h>
+ #include <linux/nls.h>
+ #include <linux/of.h>
+@@ -8116,6 +8118,219 @@
+ 	do { } while (0);
+ }
+ 
++
++/* A52_PHASE223_UFS_QUERY_IOCTL: Samsung read-only UFS query compatibility. */
++#define A52_R223_UFS_TRACE_LIMIT 96
++static atomic_t a52_r223_ufs_trace_sequence = ATOMIC_INIT(0);
++
++static bool a52_r223_ufs_trace_take(unsigned int *sequence)
++{
++	if (strcmp(current->comm, "qseecomd"))
++		return false;
++	*sequence = atomic_inc_return(&a52_r223_ufs_trace_sequence);
++	return *sequence <= A52_R223_UFS_TRACE_LIMIT;
++}
++
++static void a52_r223_ufs_trace_ioctl(unsigned int cmd, u64 scsi_lun,
++				     u8 upiu_lun)
++{
++	unsigned int sequence;
++
++	if (a52_r223_ufs_trace_take(&sequence))
++		a52_ackfr_record("UFPOST 223 ioctl n=%u cmd=0x%x slun=%llu ulun=0x%x",
++			sequence, cmd, (unsigned long long)scsi_lun, upiu_lun);
++}
++
++static void a52_r223_ufs_trace_query(u8 lun,
++				     const struct ufs_ioctl_query_data *data)
++{
++	unsigned int sequence;
++
++	if (a52_r223_ufs_trace_take(&sequence))
++		a52_ackfr_record("UFPOST 223 query n=%u lun=0x%x op=0x%x idn=0x%x size=%u",
++			sequence, lun, data->opcode, data->idn, data->buf_size);
++}
++
++static void a52_r223_ufs_trace_done(u8 lun,
++				    const struct ufs_ioctl_query_data *data,
++				    int ret)
++{
++	unsigned int sequence;
++
++	if (a52_r223_ufs_trace_take(&sequence))
++		a52_ackfr_record("UFPOST 223 done n=%u lun=0x%x op=0x%x idn=0x%x size=%u rc=%d",
++			sequence, lun, data->opcode, data->idn, data->buf_size, ret);
++}
++
++static int a52_r223_ufshcd_query_ioctl(struct ufs_hba *hba, u8 lun,
++				       void __user *buffer)
++{
++	struct ufs_ioctl_query_data ioctl_data = { };
++	u8 __user *user_buffer = buffer;
++	void *data_ptr = NULL;
++	u8 *descriptor = NULL;
++	u32 attribute = 0;
++	bool flag = false;
++	u8 flag_value = 0;
++	u8 index = 0;
++	int length = 0;
++	int ret = 0;
++
++	if (copy_from_user(&ioctl_data, user_buffer, sizeof(ioctl_data))) {
++		ret = -EFAULT;
++		goto out;
++	}
++
++	a52_r223_ufs_trace_query(lun, &ioctl_data);
++
++	switch (ioctl_data.opcode) {
++	case UPIU_QUERY_OPCODE_READ_DESC:
++		switch (ioctl_data.idn) {
++		case QUERY_DESC_IDN_DEVICE:
++		case QUERY_DESC_IDN_CONFIGURATION:
++		case QUERY_DESC_IDN_INTERCONNECT:
++		case QUERY_DESC_IDN_GEOMETRY:
++		case QUERY_DESC_IDN_POWER:
++		case QUERY_DESC_IDN_HEALTH:
++			index = 0;
++			break;
++		case QUERY_DESC_IDN_STRING:
++			index = 0;
++			if (ioctl_data.buf_size &&
++			    copy_from_user(&index, user_buffer + sizeof(ioctl_data),
++					   sizeof(index))) {
++				ret = -EFAULT;
++				goto out;
++			}
++			break;
++		case QUERY_DESC_IDN_UNIT:
++			if (lun >= UFS_UPIU_MAX_WB_LUN_ID && lun != UFS_RPMB_UNIT) {
++				ret = -EINVAL;
++				goto out;
++			}
++			index = lun;
++			break;
++		default:
++			ret = -EINVAL;
++			goto out;
++		}
++
++		length = min_t(int, QUERY_DESC_MAX_SIZE, ioctl_data.buf_size);
++		if (length < QUERY_DESC_MIN_SIZE) {
++			ret = -EINVAL;
++			goto out;
++		}
++		descriptor = kzalloc(length, GFP_KERNEL);
++		if (!descriptor) {
++			ret = -ENOMEM;
++			goto out;
++		}
++		ret = ufshcd_query_descriptor_retry(hba, ioctl_data.opcode,
++				ioctl_data.idn, index, 0, descriptor, &length);
++		if (ret)
++			goto out;
++		ioctl_data.buf_size = min_t(int, ioctl_data.buf_size, length);
++		data_ptr = descriptor;
++		break;
++
++	case UPIU_QUERY_OPCODE_READ_ATTR:
++		switch (ioctl_data.idn) {
++		case QUERY_ATTR_IDN_BOOT_LU_EN:
++		case QUERY_ATTR_IDN_POWER_MODE:
++		case QUERY_ATTR_IDN_ACTIVE_ICC_LVL:
++		case QUERY_ATTR_IDN_OOO_DATA_EN:
++		case QUERY_ATTR_IDN_BKOPS_STATUS:
++		case QUERY_ATTR_IDN_PURGE_STATUS:
++		case QUERY_ATTR_IDN_MAX_DATA_IN:
++		case QUERY_ATTR_IDN_MAX_DATA_OUT:
++		case QUERY_ATTR_IDN_REF_CLK_FREQ:
++		case QUERY_ATTR_IDN_CONF_DESC_LOCK:
++		case QUERY_ATTR_IDN_MAX_NUM_OF_RTT:
++		case QUERY_ATTR_IDN_EE_CONTROL:
++		case QUERY_ATTR_IDN_EE_STATUS:
++		case QUERY_ATTR_IDN_SECONDS_PASSED:
++			index = 0;
++			break;
++		case QUERY_ATTR_IDN_DYN_CAP_NEEDED:
++		case QUERY_ATTR_IDN_CORR_PRG_BLK_NUM:
++			index = lun;
++			break;
++		default:
++			ret = -EINVAL;
++			goto out;
++		}
++		ret = ufshcd_query_attr(hba, ioctl_data.opcode, ioctl_data.idn,
++					index, 0, &attribute);
++		if (ret)
++			goto out;
++		ioctl_data.buf_size = sizeof(attribute);
++		data_ptr = &attribute;
++		break;
++
++	case UPIU_QUERY_OPCODE_READ_FLAG:
++		switch (ioctl_data.idn) {
++		case QUERY_FLAG_IDN_FDEVICEINIT:
++		case QUERY_FLAG_IDN_PERMANENT_WPE:
++		case QUERY_FLAG_IDN_PWR_ON_WPE:
++		case QUERY_FLAG_IDN_BKOPS_EN:
++		case QUERY_FLAG_IDN_PURGE_ENABLE:
++		case QUERY_FLAG_IDN_FPHYRESOURCEREMOVAL:
++		case QUERY_FLAG_IDN_BUSY_RTC:
++			break;
++		default:
++			ret = -EINVAL;
++			goto out;
++		}
++		ret = ufshcd_query_flag_retry(hba, ioctl_data.opcode,
++				ioctl_data.idn, 0, &flag);
++		if (ret)
++			goto out;
++		flag_value = flag;
++		ioctl_data.buf_size = sizeof(flag_value);
++		data_ptr = &flag_value;
++		break;
++
++	default:
++		ret = -EINVAL;
++		goto out;
++	}
++
++	if (copy_to_user(user_buffer, &ioctl_data, sizeof(ioctl_data)) ||
++	    copy_to_user(user_buffer + sizeof(ioctl_data), data_ptr,
++			 ioctl_data.buf_size))
++		ret = -EFAULT;
++
++out:
++	a52_r223_ufs_trace_done(lun, &ioctl_data, ret);
++	kfree(descriptor);
++	return ret;
++}
++
++static int a52_r223_ufshcd_ioctl(struct scsi_device *sdev, unsigned int cmd,
++				 void __user *buffer)
++{
++	struct ufs_hba *hba = shost_priv(sdev->host);
++	u8 lun = ufshcd_scsi_to_upiu_lun(sdev->lun);
++	int ret;
++
++	if (!buffer)
++		return -EINVAL;
++
++	a52_r223_ufs_trace_ioctl(cmd, sdev->lun, lun);
++
++	if (cmd != UFS_IOCTL_QUERY)
++		return -ENOIOCTLCMD;
++
++	ret = pm_runtime_get_sync(hba->dev);
++	if (ret < 0) {
++		pm_runtime_put_noidle(hba->dev);
++		return ret;
++	}
++	ret = a52_r223_ufshcd_query_ioctl(hba, lun, buffer);
++	pm_runtime_put_sync(hba->dev);
++	return ret;
++}
++
+ static const struct attribute_group *ufshcd_driver_groups[] = {
+ 	&ufs_sysfs_unit_descriptor_group,
+ 	&ufs_sysfs_lun_attributes_group,
+@@ -8148,6 +8363,10 @@
+ 	.eh_abort_handler	= ufshcd_abort,
+ 	.eh_device_reset_handler = ufshcd_eh_device_reset_handler,
+ 	.eh_host_reset_handler   = ufshcd_eh_host_reset_handler,
++	.ioctl			= a52_r223_ufshcd_ioctl,
++#ifdef CONFIG_COMPAT
++	.compat_ioctl		= a52_r223_ufshcd_ioctl,
++#endif
+ 	.this_id		= -1,
+ 	.sg_tablesize		= SG_ALL,
+ 	.cmd_per_lun		= UFSHCD_CMD_PER_LUN,
+--- a/include/uapi/scsi/ufs/ioctl.h
++++ b/include/uapi/scsi/ufs/ioctl.h
+@@ -0,0 +1,16 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef UAPI_UFS_IOCTL_H_
++#define UAPI_UFS_IOCTL_H_
++
++#include <linux/types.h>
++
++#define UFS_IOCTL_QUERY 0x5388
++
++struct ufs_ioctl_query_data {
++	__u32 opcode;
++	__u8 idn;
++	__u16 buf_size;
++	__u8 buffer[0];
++};
++
++#endif /* UAPI_UFS_IOCTL_H_ */
+--- a/drivers/a52_secure/a52_ack_secure_flight_recorder.c
++++ b/drivers/a52_secure/a52_ack_secure_flight_recorder.c
+@@ -232,6 +232,7 @@
+ 	       !strncmp(message, "KEYPOST ", 8) ||
+ 	       !strncmp(message, "IONPOST ", 8) ||
+ 	       !strncmp(message, "SGPOST ", 7) ||
++	       !strncmp(message, "UFPOST ", 7) ||
+ 	       !strncmp(message, "BOOTPOST ", 9) ||
+ 	       !strncmp(message, "KMSPOST ", 8) ||
+ 	       !strncmp(message, "KMSBLK ", 7) ||

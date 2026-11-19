@@ -1,0 +1,93 @@
+# Phase447C built-in defaults: each matrix variant compiles its own Image.
+config A52_WAVE_DEFAULT
+    int "A52 staged wave compiled fallback"
+    range 1 8
+    default 1
+    help
+      Do not rely on Android bootloader command line for wave selection.
+config A52_MSS_DEFAULT
+    bool "A52 allow MSS when wave reaches 3"
+    default n
+config A52_IPA_DEFAULT
+    bool "A52 allow IPA when wave reaches 3"
+    default n
+
+# Phase447D default SE7+SE8+SE10 allow mask; gate W2 still prevents 7/10 on W1.
+config A52_I2C_SE_ALLOW_DEFAULT
+    hex "A52 safe legacy GENI I2C engine allow mask"
+    default 0x580
+
+config A52_447D_SM5714_RO
+    bool "A52 SM5714 read-only interim fuelgauge (NO charger controls)"
+    depends on I2C && POWER_SUPPLY
+    default n
+    help
+      Real SOC and voltage from FG 0x71; NOT a replacement for Samsung
+      battery, MUIC/PDIC or direct charging. Exposes UNKNOWN status.
+
+config A52_447F_TG_I2C_NR
+    bool "A52 exact TG I2C adapter numbers, SE7=34 SE8=35 SE10=36"
+    depends on I2C
+    default n
+    help
+      Needed for stock Samsung vendor genfscon paths. Never auto-remap
+      other serial engines or i2c-gpio buses.
+
+config A52_447G_CHG_GUARD
+    bool "Emergency SM5714 temperature-controlled charge-inhibit (NOT full thermal policy)"
+    depends on A52_447D_SM5714_RO && I2C && POWER_SUPPLY
+    default y
+    help
+      Observational SM5714 STATUS1 VBUS bit0 and FG fallback temperature.
+      Clear charger CNTL1 ENQ4FET bit3 when VBUS and >=45C. Never
+      re-enable. Does NOT replace validated battery NTC, USB-PD,
+      watchdog, direct charger, thermal policy or hardware protection.
+
+config P475_S2_CABLE
+    bool "P475 SM5714 read-only MUIC cable detection (no device created)"
+    depends on I2C && POWER_SUPPLY && A52_447D_SM5714_RO
+    default n
+    help
+      Read BC1.2 type from real SM5714 MUIC register; no writes.
+
+config P476_H2
+    bool "P476 H2 manual-only SM5714 1000mA wall current"
+    depends on A52_447D_SM5714_RO && P475_S2_CABLE
+    default n
+    help
+      Runtime OFF by default. Require H0 CHARGING, VBUSCNTL 0x44 and DCP.
+      Fail-closed restore 500mA before H0 OFF on any discrepancy.
+
+config P477_H0_REARM_FIX
+    bool "P477 H0 repeated manual arm preserves active state"
+    depends on A52_447D_SM5714_RO
+    default n
+    help
+      Opt-in source fix: if H0 is already active, echo 1 is idempotent
+      and cannot change CHARGING or clear a charging inhibit latch.
+
+config P477_H3
+    bool "P477 H3 manual DCP battery fast-current ramp (500-2100mA)"
+    depends on P476_H2 && P475_S2_CABLE
+    default n
+    help
+      H0 remains the only charger writer. Manual a52_h2_enable is OFF
+      by default. On real DCP with unchanged 0x44 input, step 60s or
+      slower using the two physical NTCs, never exceed code 0x86.
+
+config MGBATT_SHADOW
+    bool "P477 Samsung battery read-only shadow stage 1-2"
+    depends on A52_447D_SM5714_RO && P475_S2_CABLE
+    default n
+    help
+      Observes the real H0 and S2 device; parses r02 live battery DT;
+      no battery/usb/ac power_supply, no duplicate I2C client, no setter.
+
+config P479_H4
+    bool "P479 opt-in 5V MUIC cable auto ICL/FCC through H0"
+    depends on P477_H3 && P475_S2_CABLE && MGBATT_SHADOW
+    default n
+    help
+      Kernel follows twice-sampled S2 SDP/CDP/DCP while sysfs auto=1.
+      Default OFF. H0 sole writer gains only VBUSCNTL<=0x44; all
+      existing thermal/killed/NTC/dwell/IRQ constraints remain.

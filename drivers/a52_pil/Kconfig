@@ -1,0 +1,14 @@
+# A52_PHASE263_A615_ZAP_PIL_PARITY_V1
+config MSM_SUBSYSTEM_RESTART
+	bool "A52 legacy subsystem restart provider"
+	default y
+
+config MSM_PIL
+	bool "A52 legacy peripheral image loader"
+	default y
+	select FW_LOADER
+
+config MSM_PIL_SSR_GENERIC
+	bool "A52 legacy generic PIL/SSR provider"
+	default y
+	depends on MSM_PIL && MSM_SUBSYSTEM_RESTART

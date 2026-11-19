@@ -1,0 +1,302 @@
+--- a/drivers/scsi/sg.c
++++ b/drivers/scsi/sg.c
+@@ -47,6 +47,7 @@
+ #include <linux/ratelimit.h>
+ #include <linux/uio.h>
+ #include <linux/cred.h> /* for sg_check_file_access() */
++#include <linux/a52_ack_secure_flight_recorder.h>
+ 
+ #include "scsi.h"
+ #include <scsi/scsi_dbg.h>
+@@ -204,6 +205,38 @@
+ #define sg_printk(prefix, sdp, fmt, a...) \
+ 	sdev_prefix_printk(prefix, (sdp)->device,		\
+ 			   (sdp)->disk->disk_name, fmt, ##a)
++
++/* A52_PHASE222_SG_BOOT_PROGRESS_TRACE: metadata-only qseecomd SG/RPMB comparison. */
++#define A52_R222_SG_LIMIT 512
++static atomic_t a52_r222_sg_sequence = ATOMIC_INIT(0);
++#define A52_R222_SG_RECORD(fmt, ...) \
++	a52_ackfr_record("SGPOST 222 " fmt, ##__VA_ARGS__)
++
++static bool a52_r222_is_qseecomd(void)
++{
++	return !strcmp(current->comm, "qseecomd");
++}
++
++static bool a52_r222_sg_take(unsigned int *sequence)
++{
++	if (!a52_r222_is_qseecomd())
++		return false;
++	*sequence = atomic_inc_return(&a52_r222_sg_sequence);
++	return *sequence <= A52_R222_SG_LIMIT;
++}
++
++static void a52_r222_sg_device(Sg_device *sdp, unsigned int *host,
++			       unsigned int *channel, unsigned int *id,
++			       unsigned long long *lun, unsigned int *type)
++{
++	struct scsi_device *sdev = sdp ? sdp->device : NULL;
++
++	*host = sdev && sdev->host ? sdev->host->host_no : ~0U;
++	*channel = sdev ? sdev->channel : ~0U;
++	*id = sdev ? sdev->id : ~0U;
++	*lun = sdev ? (unsigned long long)sdev->lun : ~0ULL;
++	*type = sdev ? sdev->type : ~0U;
++}
+ 
+ /*
+  * The SCSI interfaces that use read() and write() as an asynchronous variant of
+@@ -762,6 +795,17 @@
+ 		sg_remove_request(sfp, srp);
+ 		return -EFAULT;
+ 	}
++	{
++		unsigned int seq, host, channel, id, type;
++		unsigned long long lun;
++		Sg_device *sdp = sfp->parentdp;
++		if (a52_r222_sg_take(&seq)) {
++			a52_r222_sg_device(sdp, &host, &channel, &id, &lun, &type);
++			A52_R222_SG_RECORD("submit n=%u sg=%u op=0x%02x clen=%u dir=%d len=%u timeout=%u lun=%llu",
++				seq, sdp->index, cmnd[0], hp->cmd_len,
++				hp->dxfer_direction, hp->dxfer_len, hp->timeout, lun);
++		}
++	}
+ 	if (read_only && sg_allow_access(file, cmnd)) {
+ 		sg_remove_request(sfp, srp);
+ 		return -EPERM;
+@@ -925,6 +969,16 @@
+ 				   "sg_ioctl: cmd=0x%x\n", (int) cmd_in));
+ 	read_only = (O_RDWR != (filp->f_flags & O_ACCMODE));
+ 
++	{
++		unsigned int seq, host, channel, id, type;
++		unsigned long long lun;
++		if (a52_r222_sg_take(&seq)) {
++			a52_r222_sg_device(sdp, &host, &channel, &id, &lun, &type);
++			A52_R222_SG_RECORD("ioctl n=%u sg=%u cmd=0x%x h=%u c=%u id=%u lun=%llu type=%u",
++				seq, sdp->index, cmd_in, host, channel, id, lun, type);
++		}
++	}
++
+ 	switch (cmd_in) {
+ 	case SG_IO:
+ 		if (atomic_read(&sdp->detaching))
+@@ -939,8 +993,25 @@
+ 			srp_done(sfp, srp));
+ 		write_lock_irq(&sfp->rq_list_lock);
+ 		if (srp->done) {
++			unsigned int seq, host, channel, id, type;
++			unsigned long long lun;
++			unsigned int sk = 0xff, asc = 0xff, ascq = 0xff;
++			sg_io_hdr_t *hp = &srp->header;
+ 			srp->done = 2;
+ 			write_unlock_irq(&sfp->rq_list_lock);
++			if (hp->sb_len_wr > 2)
++				sk = srp->sense_b[2] & 0xf;
++			if (hp->sb_len_wr > 12)
++				asc = srp->sense_b[12];
++			if (hp->sb_len_wr > 13)
++				ascq = srp->sense_b[13];
++			if (a52_r222_sg_take(&seq)) {
++				a52_r222_sg_device(sdp, &host, &channel, &id, &lun, &type);
++				A52_R222_SG_RECORD("done n=%u sg=%u op=0x%02x st=0x%x mask=0x%x host=0x%x drv=0x%x resid=%d sense=%u sk=0x%x asc=0x%x ascq=0x%x",
++					seq, sdp->index, srp->data.cmd_opcode, hp->status,
++					hp->masked_status, hp->host_status, hp->driver_status,
++					hp->resid, hp->sb_len_wr, sk, asc, ascq);
++			}
+ 			result = sg_new_read(sfp, p, SZ_SG_IO_HDR, srp);
+ 			return (result < 0) ? result : 0;
+ 		}
+@@ -1157,10 +1228,18 @@
+ 		return -ENXIO;
+ 
+ 	ret = sg_ioctl_common(filp, sdp, sfp, cmd_in, p);
+-	if (ret != -ENOIOCTLCMD)
+-		return ret;
+-
+-	return scsi_ioctl(sdp->device, cmd_in, p);
++	if (ret == -ENOIOCTLCMD)
++		ret = scsi_ioctl(sdp->device, cmd_in, p);
++	{
++		unsigned int seq, host, channel, id, type;
++		unsigned long long lun;
++		if (a52_r222_sg_take(&seq)) {
++			a52_r222_sg_device(sdp, &host, &channel, &id, &lun, &type);
++			A52_R222_SG_RECORD("ioctl-ret n=%u sg=%u cmd=0x%x rc=%d lun=%llu type=%u",
++				seq, sdp->index, cmd_in, ret, lun, type);
++		}
++	}
++	return ret;
+ }
+ 
+ #ifdef CONFIG_COMPAT
+@@ -1175,10 +1254,18 @@
+ 		return -ENXIO;
+ 
+ 	ret = sg_ioctl_common(filp, sdp, sfp, cmd_in, p);
+-	if (ret != -ENOIOCTLCMD)
+-		return ret;
+-
+-	return scsi_compat_ioctl(sdp->device, cmd_in, p);
++	if (ret == -ENOIOCTLCMD)
++		ret = scsi_compat_ioctl(sdp->device, cmd_in, p);
++	{
++		unsigned int seq, host, channel, id, type;
++		unsigned long long lun;
++		if (a52_r222_sg_take(&seq)) {
++			a52_r222_sg_device(sdp, &host, &channel, &id, &lun, &type);
++			A52_R222_SG_RECORD("compat-ret n=%u sg=%u cmd=0x%x rc=%d lun=%llu type=%u",
++				seq, sdp->index, cmd_in, ret, lun, type);
++		}
++	}
++	return ret;
+ }
+ #endif
+ 
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -1901,6 +1901,42 @@
+ 	return retval;
+ }
+ 
++
++/* A52_PHASE222_SG_BOOT_PROGRESS_TRACE: sparse later-boot service milestones. */
++#define A52_R222_BOOT_LIMIT 256
++static atomic_t a52_r222_exec_sequence = ATOMIC_INIT(0);
++
++static bool a52_r222_boot_name(const char *name)
++{
++	static const char * const names[] = {
++		"qseecomd",
++		"ueventd",
++		"servicemanager",
++		"hwservicemanager",
++		"vndservicemanager",
++		"vold",
++		"apexd",
++		"surfaceflinger",
++		"zygote",
++		"system_server",
++		"keystore2",
++		"keymaster",
++		"keymint",
++		"gatekeeper",
++		"installd",
++		"bootanim",
++		"netd",
++	};
++	unsigned int i;
++
++	if (!name)
++		return false;
++	for (i = 0; i < ARRAY_SIZE(names); i++)
++		if (strstr(name, names[i]))
++			return true;
++	return false;
++}
++
+ static int do_execveat_common(int fd, struct filename *filename,
+ 			      struct user_arg_ptr argv,
+ 			      struct user_arg_ptr envp,
+@@ -1908,6 +1944,8 @@
+ {
+ 	struct linux_binprm *bprm;
+ 	int retval;
++	unsigned int a52_r222_boot_id = 0;
++	bool a52_r222_boot_trace = false;
+ 	unsigned int trace_id = 0;
+ 	unsigned int service_trace_id = 0;
+ 	bool trace = false;
+@@ -1915,6 +1953,14 @@
+ 
+ 	if (IS_ERR(filename))
+ 		return PTR_ERR(filename);
++
++	if (a52_r222_boot_name(filename->name)) {
++		a52_r222_boot_id = atomic_inc_return(&a52_r222_exec_sequence);
++		a52_r222_boot_trace = a52_r222_boot_id <= A52_R222_BOOT_LIMIT;
++		if (a52_r222_boot_trace)
++			a52_ackfr_record("BOOTPOST 222 exec n=%u p=%d %.48s",
++				a52_r222_boot_id, current->pid, filename->name);
++	}
+ 
+ 	if (a52_r212_graphics_exec(filename->name)) {
+ 		trace_id = atomic_inc_return(&a52_r212_exec_sequence);
+@@ -2009,6 +2055,9 @@
+ 	if (service_trace)
+ 		a52_ackfr_record("GFXPOST 217 exec-ret n=%u rc=%d c=%.16s",
+ 				  service_trace_id, retval, current->comm);
++	if (a52_r222_boot_trace)
++		a52_ackfr_record("BOOTPOST 222 exec-ret n=%u rc=%d c=%.16s",
++			a52_r222_boot_id, retval, current->comm);
+ 	putname(filename);
+ 	return retval;
+ }
+--- a/kernel/exit.c
++++ b/kernel/exit.c
+@@ -789,10 +789,53 @@
+ 		strstr(comm, "mapper") || strstr(comm, "zygote")));
+ }
+ 
++
++/* A52_PHASE222_SG_BOOT_PROGRESS_TRACE: sparse later-boot exit milestones. */
++#define A52_R222_BOOT_LIMIT 256
++static atomic_t a52_r222_exit_sequence = ATOMIC_INIT(0);
++
++static bool a52_r222_boot_name(const char *name)
++{
++	static const char * const names[] = {
++		"qseecomd",
++		"ueventd",
++		"servicemanager",
++		"hwservicemanager",
++		"vndservicemanager",
++		"vold",
++		"apexd",
++		"surfaceflinger",
++		"zygote",
++		"system_server",
++		"keystore2",
++		"keymaster",
++		"keymint",
++		"gatekeeper",
++		"installd",
++		"bootanim",
++		"netd",
++	};
++	unsigned int i;
++
++	if (!name)
++		return false;
++	for (i = 0; i < ARRAY_SIZE(names); i++)
++		if (strstr(name, names[i]))
++			return true;
++	return false;
++}
++
+ void __noreturn do_exit(long code)
+ {
+ 	struct task_struct *tsk = current;
+ 	int group_dead;
++
++	if (a52_r222_boot_name(current->comm)) {
++		unsigned int id = atomic_inc_return(&a52_r222_exit_sequence);
++		if (id <= A52_R222_BOOT_LIMIT)
++			a52_ackfr_record("BOOTPOST 222 exit n=%u p=%d c=%.16s code=%ld",
++				id, current->pid, current->comm, code);
++	}
+ 
+ 	if (a52_r212_graphics_comm(current->comm)) {
+ 		unsigned int trace_id = atomic_inc_return(&a52_r212_exit_sequence);
+--- a/drivers/a52_secure/a52_ack_secure_flight_recorder.c
++++ b/drivers/a52_secure/a52_ack_secure_flight_recorder.c
+@@ -231,6 +231,8 @@
+ 	       !strncmp(message, "GFXPOST ", 8) ||
+ 	       !strncmp(message, "KEYPOST ", 8) ||
+ 	       !strncmp(message, "IONPOST ", 8) ||
++	       !strncmp(message, "SGPOST ", 7) ||
++	       !strncmp(message, "BOOTPOST ", 9) ||
+ 	       !strncmp(message, "KMSPOST ", 8) ||
+ 	       !strncmp(message, "KMSBLK ", 7) ||
+ 	       !strncmp(message, "CAT ", 4) ||

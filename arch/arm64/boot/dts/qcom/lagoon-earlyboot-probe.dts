@@ -1,0 +1,8 @@
+/dts-v1/;
+
+#include "lagoon-earlyboot-probe.dtsi"
+
+/ {
+	model = "Samsung A52xq Lagoon early-boot compile probe";
+	compatible = "qcom,lagoon-mtp", "qcom,lagoon";
+};

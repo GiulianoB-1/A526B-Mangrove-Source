@@ -1,0 +1,12 @@
+config P471_RMNET_CORE
+	bool "P471 Qualcomm 5.10 MAP vendor netlink core"
+	depends on NET && INET
+	select GRO_CELLS
+	help
+	  Pinned datarmnet core, built into the opt-in P471 candidate.
+
+config P471_RMNET_CTL
+	bool "P471 Qualcomm rmnet ctl IPA transport"
+	depends on P471_RMNET_CORE && IPA3
+	help
+	  Build the pinned rmnet ctl IPA transport, no fake modules.

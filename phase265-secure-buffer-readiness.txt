@@ -1,0 +1,9 @@
+A52_PHASE265_SECURE_BUFFER_READINESS_V1
+CONFIG_ION=present
+CONFIG_QCOM_SCM=present
+qcom_scm_assign_mem=present
+hyp_assign_table=present
+ion_hyp_assign_sg=missing
+ion_hyp_unassign_sg=missing
+secure_heap=missing
+NOTE=readiness audit only; missing Golden-only secure symbols are not auto-ported in Phase265
