@@ -78,6 +78,15 @@ jobs:
             diff -u ci/build.config out/.config | head -n 140 || true
             exit 1
           fi
+      - name: Fail-fast compile of the legacy PIL SSR ABI (no source patching)
+        run: |
+          set -Eeuo pipefail
+          # PIL and SSR must use exactly the same legacy descriptor ABI.
+          grep -Fq '#include "../../a52-compat/include/soc/qcom/subsystem_restart.h"' drivers/a52_pil/subsys-pil-tz.c
+          grep -Fq '#include "../../a52-compat/include/soc/qcom/subsystem_restart.h"' drivers/a52_pil/subsystem_restart.c
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+            drivers/a52_pil/subsys-pil-tz.o
       - name: Build checked-out source, no source patching
         env:
           LOCALVERSION: ''
