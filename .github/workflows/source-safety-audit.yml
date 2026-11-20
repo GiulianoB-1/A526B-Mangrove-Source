@@ -128,3 +128,17 @@ jobs:
           grep -Fxq 'CONFIG_P479_H4=y' "$ROOT/ci/build.config"
           grep -Fxq 'CONFIG_SECURITY_SELINUX=y' "$ROOT/ci/build.config"
           echo 'P479 read-only source contract gates PASS; charging hardware policy remains off by default; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: P480 native A3c ABI and no-flash source-only contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test -f source/ci/p480_a3c_source_audit.py; then
+            python3 source/ci/p480_a3c_source_audit.py --root source
+            echo 'P480 native A3c guards and no-flash source contracts PASS; hardware untested.' >> "$GITHUB_STEP_SUMMARY"
+          elif grep -Fxq 'CONFIG_P480_A3C=y' source/ci/build.config; then
+            echo '::error::P480 enabled but independent A3c audit is missing'
+            exit 1
+          else
+            echo 'P480 absent in pinned P479 baseline, A3c source check not required.'
+          fi
