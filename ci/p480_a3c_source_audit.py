@@ -110,6 +110,25 @@ def main() -> None:
         check("EXPORT_SYMBOL(" + symbol + ")" in afe,
               "AFE function exported: " + symbol)
 
+    # The legacy ADM matrix mapper rejects a nonzero FE ID because the
+    # newer 5.4 calibration lookup is not yet safely ported. Never discard
+    # this error and proceed with PCM/compressed PP configuration as though
+    # routing had succeeded (the original P480 draft did exactly that).
+    routing = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-pcm-routing-v2.c")
+    check(routing.count("= adm_matrix_map(") == 3,
+          "all three ADM matrix-map return values explicitly checked")
+    check(not __import__("re").search(r"(?m)^\\s*adm_matrix_map\\(", routing),
+          "no unchecked raw ADM matrix-map calls")
+    for word in ("P480 A3c ADM build_matrix", "P480 A3c ADM compressed",
+                 "P480 A3c ADM PCM"):
+        check(word in routing, "matrix routing error is logged: " + word)
+    check("return p480_map_rc;" in routing and
+          "mutex_unlock(&routing_lock);" in routing,
+          "unsupported compressed matrix routing propagates failure")
+    check("return ret;" in routing and
+          "routing not applied" in routing,
+          "unsupported PCM matrix routing propagates failure")
+
     shims = (
         ("p480_adm_compat.h", "p480_native_adm_open", "adm_open",
          "msm-pcm-routing-v2.h"),
