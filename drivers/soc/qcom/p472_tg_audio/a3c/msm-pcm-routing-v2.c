@@ -1761,6 +1761,7 @@ static void msm_pcm_routing_build_matrix(int fedai_id, int sess_type,
 					 uint32_t passthr_mode)
 {
 	int i, port_type, j, num_copps = 0;
+	int p480_map_rc;
 	struct route_payload payload;
 
 	port_type = ((path_type == ADM_PATH_PLAYBACK ||
@@ -1800,7 +1801,14 @@ static void msm_pcm_routing_build_matrix(int fedai_id, int sess_type,
 	if (num_copps) {
 		payload.num_copps = num_copps;
 		payload.session_id = fe_dai_map[fedai_id][sess_type].strm_id;
-		adm_matrix_map(fedai_id, path_type, payload, perf_mode, passthr_mode);
+		/* P480: never configure postprocessing after ADM rejected FE calibration. */
+		p480_map_rc = adm_matrix_map(fedai_id, path_type, payload,
+					       perf_mode, passthr_mode);
+		if (p480_map_rc) {
+			pr_err_ratelimited("P480 A3c ADM build_matrix FE=%d rc=%d: routing not applied\n",
+					fedai_id, p480_map_rc);
+			return;
+		}
 		msm_pcm_routng_cfg_matrix_map_pp(payload, path_type, perf_mode);
 	}
 }
@@ -1902,6 +1910,7 @@ int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 {
 	int i, j, session_type, path_type, port_type, topology;
 	int num_copps = 0;
+	int p480_map_rc;
 	struct route_payload payload;
 	u32 channels, sample_rate;
 	u16 bit_width = 16, be_bit_width;
@@ -2073,7 +2082,14 @@ int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 	if (num_copps) {
 		payload.num_copps = num_copps;
 		payload.session_id = fe_dai_map[fe_id][session_type].strm_id;
-		adm_matrix_map(fe_id, path_type, payload, perf_mode, passthr_mode);
+		p480_map_rc = adm_matrix_map(fe_id, path_type, payload,
+					       perf_mode, passthr_mode);
+		if (p480_map_rc) {
+			pr_err_ratelimited("P480 A3c ADM compressed FE=%d rc=%d: routing not applied\n",
+					fe_id, p480_map_rc);
+			mutex_unlock(&routing_lock);
+			return p480_map_rc;
+		}
 		msm_pcm_routng_cfg_matrix_map_pp(payload, path_type, perf_mode);
 	}
 	mutex_unlock(&routing_lock);
@@ -2465,7 +2481,15 @@ int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode,
 	if (num_copps) {
 		payload.num_copps = num_copps;
 		payload.session_id = fe_dai_map[fedai_id][session_type].strm_id;
-		adm_matrix_map(fedai_id, path_type, payload, perf_mode, passthr_mode);
+		/* Reject unsupported FE calibration instead of returning success. */
+		ret = adm_matrix_map(fedai_id, path_type, payload,
+				     perf_mode, passthr_mode);
+		if (ret) {
+			pr_err_ratelimited("P480 A3c ADM PCM FE=%d rc=%d: routing not applied\n",
+					fedai_id, ret);
+			mutex_unlock(&routing_lock);
+			return ret;
+		}
 		msm_pcm_routng_cfg_matrix_map_pp(payload, path_type, perf_mode);
 	}
 
