@@ -1,11 +1,11 @@
 {
   "ancestry_strict_only": true,
   "flash_authorized": false,
-  "kernel_config_sha256": "62e75568506c051408588d2eb77fa94fb8ada762fcff997739a5b595a742d50b",
+  "kernel_config_sha256": "3d2b45be575df782a1f28d100c8f10705e5e14d9c50273cf51fa2757568e4746",
   "missing_required": [],
   "phase446wx_ancestry_manifest_sha256": "ff3bae1093dcf5fca3f2c2fa516000de69f677f9fc673dd38b9da378ffd085d4",
   "schema": "mangrove-p479-source-ancestry-v1",
   "source_fingerprint_sha256": "7f9fdb476216c4f320c4f3c745bed8ea3665cf5767f23dbd9d521cc1d49d975e",
-  "stage": "P479-equivalent-source",
+  "stage": "P479-direct-ci-repair",
   "strict": true
 }

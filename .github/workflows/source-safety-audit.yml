@@ -40,8 +40,8 @@ jobs:
           p=Path('scripts/446y_apply_handoff_i2c.py.z64')
           raw=zlib.decompress(base64.b64decode(p.read_text().strip(),validate=True))
           assert hashlib.sha256(raw).hexdigest()=='0cd9a1eea938e8f3aa74e48d9b11b89cdfacfce3defb476e069d292774beb81d'
-          old=b'    if (!gi2c->se.wrapper)\\n        return -EPROBE_DEFER;'
-          new=b'    if (!gi2c->se.wrapper) {\\n        return -EPROBE_DEFER;\\n    }'
+          old=b'    if (!gi2c->se.wrapper)\n        return -EPROBE_DEFER;'
+          new=b'    if (!gi2c->se.wrapper) {\n        return -EPROBE_DEFER;\n    }'
           assert raw.count(old)==1
           raw=raw.replace(old,new,1)
           assert hashlib.sha256(raw).hexdigest()=='d9b95c7f7ee9ccc14e590d82a5d6b91f737c504babc63132d0488fc0447016b7'

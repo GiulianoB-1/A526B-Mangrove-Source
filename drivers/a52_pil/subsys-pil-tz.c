@@ -18,7 +18,11 @@
 #include <linux/msm-bus.h>
 #include <linux/dma-mapping.h>
 
-#include <soc/qcom/subsystem_restart.h>
+/* Use the same legacy SSR descriptor/API as subsystem_restart.c.
+ * The kernel's 5.10 header omits IRQ callbacks and uses a different
+ * complete_shutdown_ack() argument type; mixing headers breaks the ABI.
+ */
+#include "../../a52-compat/include/soc/qcom/subsystem_restart.h"
 #include <soc/qcom/ramdump.h>
 #include <soc/qcom/scm.h>
 
