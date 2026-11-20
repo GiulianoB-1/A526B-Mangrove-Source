@@ -5,6 +5,12 @@
 #define _MSM_PCM_ROUTING_H
 #include <dsp/apr_audio-v2.h>
 #include <dsp/q6adm-v2.h>
+/* Select exact 11-argument P479 ADM call ABI; never discard
+ * unsupported Samsung 5.4 COPP/EC-ref parameters.
+ */
+#ifdef CONFIG_P480_A3C
+#include "p480_adm_compat.h"
+#endif
 #ifdef CONFIG_SEC_SND_ADAPTATION
 #include <asoc/sec_audio_adaptation.h>
 #endif
