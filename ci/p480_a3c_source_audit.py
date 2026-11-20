@@ -117,7 +117,7 @@ def main() -> None:
     routing = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-pcm-routing-v2.c")
     check(routing.count("= adm_matrix_map(") == 3,
           "all three ADM matrix-map return values explicitly checked")
-    check(not __import__("re").search(r"(?m)^\\s*adm_matrix_map\\(", routing),
+    check(not re.search(r"(?m)^\s*adm_matrix_map\(", routing),
           "no unchecked raw ADM matrix-map calls")
     for word in ("P480 A3c ADM build_matrix", "P480 A3c ADM compressed",
                  "P480 A3c ADM PCM"):
