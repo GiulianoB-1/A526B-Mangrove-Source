@@ -52,8 +52,29 @@ static inline int p480_native_adm_open_v2(int port, int path, int rate,
 		acdbdev_id, session_type, pass_thr, copp_token);
 }
 
+/* The 5.4 matrix mapper adds a frontend ID used in its calibration.
+ * The older A3a implementation has no per-FE calibration input. Reject
+ * non-default frontends rather than silently shifting the C ABI.
+ */
+extern int p480_tg_adm_matrix_map(int path, struct route_payload payload_map,
+		int perf_mode, uint32_t passthr_mode)
+		__asm__("adm_matrix_map");
+
+static inline int p480_native_adm_matrix_map(int fedai_id, int path,
+		struct route_payload payload_map, int perf_mode,
+		uint32_t passthr_mode)
+{
+	if (fedai_id != 0) {
+		pr_warn_ratelimited("P480 A3c FE-specific ADM calibration unsupported (FE=%d)\\n", fedai_id);
+		return -EOPNOTSUPP;
+	}
+	return p480_tg_adm_matrix_map(path, payload_map, perf_mode,
+		passthr_mode);
+}
+
 /* Applied after the genuine 5.4 declaration has been parsed. */
 #define adm_open p480_native_adm_open
 #define adm_open_v2 p480_native_adm_open_v2
+#define adm_matrix_map p480_native_adm_matrix_map
 
 #endif /* P480_NATIVE_ADM_COMPAT_H */
