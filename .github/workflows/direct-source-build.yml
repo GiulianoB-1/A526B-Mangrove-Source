@@ -92,6 +92,14 @@ jobs:
           set -Eeuo pipefail
           if grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config; then
             test -s drivers/soc/qcom/p472_tg_audio/a3c/kona.c
+            # Compile real ASM/ADM/AFE services first: donor API differences
+            # must fail at compile time, not surface as a late vmlinux error.
+            for source in q6asm q6adm q6afe; do
+              echo "P480 real DSP service compile probe: $source"
+              make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+                CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+                "drivers/soc/qcom/p472_tg_audio/dsp/$source.o"
+            done
             for source in kona msm-pcm-q6-v2 msm-compress-q6-v2 msm-dai-q6-v2; do
               echo "P480 native A3c compile probe: $source"
               make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
