@@ -1,0 +1,149 @@
+{
+  "schema": "P480-live-r02-merged-sound-node-v1",
+  "provenance": "User-supplied /sys/firmware/fdt decoded merged sound node, A52 board rev 02, read 2026-11-13",
+  "source_file": "A52_live_DT_sound_card_node.txt",
+  "source_file_sha256": "1c3f1a46f3c3f7a022cd2ff7e186c9b65b6346d1f0db01e89e8c3a152a12f958",
+  "sound_node_path": "/soc/qcom,msm-audio-apr/qcom,q6core-audio/sound",
+  "compatible": "qcom,kona-asoc-snd",
+  "model": "lito-lagoonmtp-snd-card",
+  "routing_pairs": [
+    [
+      "AMIC1",
+      "MIC BIAS1"
+    ],
+    [
+      "MIC BIAS1",
+      "Analog Mic1"
+    ],
+    [
+      "AMIC2",
+      "MIC BIAS2"
+    ],
+    [
+      "MIC BIAS2",
+      "Analog Mic2"
+    ],
+    [
+      "AMIC3",
+      "MIC BIAS3"
+    ],
+    [
+      "MIC BIAS3",
+      "Analog Mic3"
+    ],
+    [
+      "AMIC4",
+      "MIC BIAS3"
+    ],
+    [
+      "MIC BIAS3",
+      "Analog Mic4"
+    ],
+    [
+      "AMIC5",
+      "MIC BIAS4"
+    ],
+    [
+      "MIC BIAS4",
+      "Analog Mic5"
+    ],
+    [
+      "IN1_HPHL",
+      "HPHL_OUT"
+    ],
+    [
+      "IN2_HPHR",
+      "HPHR_OUT"
+    ],
+    [
+      "TX SWR_ADC0",
+      "ADC1_OUTPUT"
+    ],
+    [
+      "TX SWR_ADC1",
+      "ADC2_OUTPUT"
+    ],
+    [
+      "TX SWR_ADC2",
+      "ADC3_OUTPUT"
+    ],
+    [
+      "TX SWR_ADC3",
+      "ADC4_OUTPUT"
+    ],
+    [
+      "RX_TX DEC0_INP",
+      "TX DEC0 MUX"
+    ],
+    [
+      "RX_TX DEC1_INP",
+      "TX DEC1 MUX"
+    ],
+    [
+      "RX_TX DEC2_INP",
+      "TX DEC2 MUX"
+    ],
+    [
+      "RX_TX DEC3_INP",
+      "TX DEC3 MUX"
+    ],
+    [
+      "VA_AIF1 CAP",
+      "VA_SWR_CLK"
+    ],
+    [
+      "VA_AIF2 CAP",
+      "VA_SWR_CLK"
+    ],
+    [
+      "VA_AIF3 CAP",
+      "VA_SWR_CLK"
+    ],
+    [
+      "VA SWR_ADC0",
+      "ADC1_OUTPUT"
+    ],
+    [
+      "VA SWR_ADC1",
+      "ADC2_OUTPUT"
+    ],
+    [
+      "VA SWR_ADC2",
+      "ADC3_OUTPUT"
+    ],
+    [
+      "VA SWR_ADC3",
+      "ADC4_OUTPUT"
+    ]
+  ],
+  "asoc_platform_names": [
+    "msm-pcm-dsp.0",
+    "msm-pcm-dsp.1",
+    "msm-pcm-dsp.2",
+    "msm-voip-dsp",
+    "msm-pcm-voice",
+    "msm-pcm-loopback",
+    "msm-compress-dsp",
+    "msm-pcm-hostless",
+    "msm-pcm-afe",
+    "msm-lsm-client",
+    "msm-pcm-routing",
+    "msm-compr-dsp",
+    "msm-pcm-dsp-noirq",
+    "q6audio-adaptation"
+  ],
+  "asoc_codec_names": [
+    "msm-stub-codec.1",
+    "bolero_codec",
+    "msm-ext-disp-audio-codec-rx"
+  ],
+  "wsa_max_devs": 0,
+  "ext_disp_audio_rx": 1,
+  "notes": [
+    "Source is the user-provided decoded live FDT, not an independently downloaded binary FDT.",
+    "The downloaded pinned r02 overlay source must independently match all 27 routing pairs.",
+    "This evidence allows review-only repackaging while preserving original boot DTB; it does not prove audio probe or authorize flash."
+  ],
+  "hardware_audio_verified": false,
+  "flash_authorized": false
+}
