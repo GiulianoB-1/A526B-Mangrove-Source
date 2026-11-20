@@ -146,6 +146,7 @@ jobs:
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
 
       - name: P480 HLT boot-v2 archive-pinned packaging audit (DIAGNOSTIC ONLY, NO FLASH)
+        id: package
         if: github.ref == 'refs/heads/feature/p480-a3c-native'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -184,10 +185,52 @@ jobs:
           # Verify the real archived final boot FDT: an enabled Kona A526B
           # sound-card node, routing and all 29 selected FE/BE platform phandles.
           # This is a bind-prerequisite check, NOT proof of runtime audio.
-          python3 ci/p480_boot_dtb_audit.py \
+          # A3c cannot be claimed bind-ready when the original archived WX
+          # DTB lacks the A526B model and audio-routing. Allow ONLY that
+          # exactly-known mismatch to produce a diagnostic report, never a
+          # candidate image. Any other preflight failure remains a hard CI FAIL.
+          if ! python3 ci/p480_boot_dtb_audit.py \
             --dtb p480-package/unpack/boot-final.dtb \
             --manifest ci/P480-a3c-native-source.json \
-            --report p480-package/output/P480-embedded-WX-DTB-audio-contract.json
+            --report p480-package/output/P480-embedded-WX-DTB-audio-contract.json; then
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('p480-package/output')
+          report = json.loads((root / 'P480-embedded-WX-DTB-audio-contract.json').read_text())
+          assert report['status'] == 'DT_SOUND_BINDING_PREREQUISITES_FAILED'
+          assert report['selected_dai_link_count'] == 29
+          assert report['fdt_tree_count'] == 1
+          assert report['flash_authorized'] is False
+          assert report['hardware_validated'] is False
+          assert len(report['card_candidates']) == 1
+          checks = report['card_candidates'][0]['checks']
+          assert checks == {
+              'compatible_real_kona': True,
+              'enabled_sound_card_node': True,
+              'exact_A526B_card_model': False,
+              'audio_routing_nonempty_even_pairs': False,
+              'platform_name_phandle_lists_aligned': True,
+              'selected_29_FE_BE_platforms_all_resolve': True,
+          }, 'Unexpected DTB regression. Fail closed.'
+          assert report['card_candidates'][0]['audio_routing_string_count'] == 0
+          (root / 'P480-A3c-DTB-BLOCKED-NO-IMAGE.txt').write_text(
+              'P480 A3c kernel compiled, but archived Phase446WX boot DTB is\n'
+              'missing the exact A526B model and audio-routing properties.\n'
+              'Audio bind prerequisites FAILED. No boot image was produced.\n'
+              'DO NOT FLASH. No hardware or audio validation is claimed.\n'
+              'The complete DTB audit report accompanies this file.\n')
+          PY
+            (cd p480-package/output && sha256sum \
+              P480-embedded-WX-DTB-audio-contract.json \
+              P480-A3c-DTB-BLOCKED-NO-IMAGE.txt > SHA256SUMS && \
+              sha256sum -c SHA256SUMS)
+            echo 'blocked=true' >> "$GITHUB_OUTPUT"
+            echo '::warning::Known Phase446WX DTB A3c mismatch: model/audio-routing absent. Packaging BLOCKED, no image generated.'
+            echo 'P480 native kernel build PASS; DTB audio prerequisites FAIL. Packaging BLOCKED, NO IMAGE and NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # Identical Image bytes to the already-linked native direct-source build.
           gzip -n -c out/arch/arm64/boot/Image > p480-package/unpack/Image.gz
           NATIVE_SHA="$(sha256sum out/arch/arm64/boot/Image | cut -d' ' -f1)"
@@ -250,13 +293,25 @@ jobs:
             P480-normal-repack-contract.json P480-HLT-commandline-contract.json \
             P480-embedded-WX-DTB-audio-contract.json \
             README-DO-NOT-FLASH.txt > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
           echo 'P480 A3c boot-v2 diagnostic repack verified: HLT, pinned WX DTB, original ramdisk, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum p480-package/output/P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img >> "$GITHUB_STEP_SUMMARY"
       - name: Upload NO-FLASH diagnostic package for offline review
-        if: github.ref == 'refs/heads/feature/p480-a3c-native'
+        if: github.ref == 'refs/heads/feature/p480-a3c-native' && steps.package.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH-${{ github.sha }}
           path: p480-package/output/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload DTB-blocked diagnostic report (NO IMAGE, NO FLASH)
+        if: github.ref == 'refs/heads/feature/p480-a3c-native' && steps.package.outputs.blocked == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-A3c-DTB-BLOCKED-NO-IMAGE-${{ github.sha }}
+          path: |
+            p480-package/output/P480-embedded-WX-DTB-audio-contract.json
+            p480-package/output/P480-A3c-DTB-BLOCKED-NO-IMAGE.txt
+            p480-package/output/SHA256SUMS
           if-no-files-found: error
           retention-days: 90
