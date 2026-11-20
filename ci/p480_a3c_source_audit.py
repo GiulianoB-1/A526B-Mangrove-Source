@@ -158,6 +158,18 @@ def main() -> None:
     check("P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img" in package and
           "sha256sum -c SHA256SUMS" in package,
           "diagnostic packaging and SHA256 gate retained")
+    check("if ! python3 ci/p480_boot_dtb_audit.py" in package and
+          "'exact_A526B_card_model': False" in package and
+          "'audio_routing_nonempty_even_pairs': False" in package and
+          "'selected_29_FE_BE_platforms_all_resolve': True" in package and
+          "Unexpected DTB regression. Fail closed." in package,
+          "only exact known WX DTB mismatch may be diagnostic, others fail")
+    check("steps.package.outputs.ready == 'true'" in package and
+          "steps.package.outputs.blocked == 'true'" in package and
+          "P480-A3c-DTB-BLOCKED-NO-IMAGE" in package and
+          "echo 'ready=true' >>" in package and
+          "echo 'blocked=true' >>" in package,
+          "never publish boot image on failed DTB preflight")
     print("P480 A3c source-only integration contracts PASS; no hardware validation")
 
 
