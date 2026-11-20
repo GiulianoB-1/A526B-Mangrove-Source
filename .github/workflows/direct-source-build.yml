@@ -145,9 +145,9 @@ jobs:
           echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
 
-      - name: P480 HLT boot-v2 archive-pinned packaging audit (DIAGNOSTIC ONLY, NO FLASH)
+      - name: RETIRED obsolete WX-boot packaging (NEVER RUN, NO FLASH)
         id: package
-        if: github.ref == 'refs/heads/feature/p480-a3c-native'
+        if: false # P479-only HLT template is mandatory; use p480-dual-review-images.yml
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
