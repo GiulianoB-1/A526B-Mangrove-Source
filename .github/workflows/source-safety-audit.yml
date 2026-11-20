@@ -1,6 +1,7 @@
 name: Mangrove read-only safety audits against real source
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
