@@ -2,16 +2,28 @@ name: Mangrove direct-source Linux 5.10 build (NO FLASH)
 on:
   push:
     branches: [main, 'feature/**', 'p480/**']
-  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '.github/workflows/**'
   workflow_dispatch:
+    inputs:
+      p480_twins:
+        description: 'P480 A3C and NO-A3C with exact P479 HLT boot, NO FLASH'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: mangrove-native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compile:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.p480_twins }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 210
     steps:
       - name: Checkout exactly the triggering source commit
         uses: actions/checkout@v4
@@ -144,174 +156,224 @@ jobs:
           grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' out/System.map
           echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
-
-      - name: RETIRED obsolete WX-boot packaging (NEVER RUN, NO FLASH)
-        id: package
-        if: false # P479-only HLT template is mandatory; use p480-dual-review-images.yml
+  dual:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Gate immutable P479 boot provenance and direct-source branch
+        run: |
+          set -Eeuo pipefail
+          git merge-base --is-ancestor "$(git rev-list -n1 p479-baseline)" HEAD
+          git merge-base --is-ancestor 55babd9c651375580b3c5c10d7f37ac6213e005c HEAD
+          grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config
+          grep -Fxq 'CONFIG_P479_H4=y' ci/build.config
+          test ! -e KernelSU/.git
+          python3 -m py_compile ci/p480_p479_boot_repack.py
+          python3 ci/p480_a3c_source_audit.py --root .
+      - name: Compile both P480 variants and the 55babd9 P479 control
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          for variant in A3C NO-A3C; do
+            mkdir -p "out_$variant" "package/$variant"
+            cp ci/build.config "out_$variant/.config"
+            if [ "$variant" = NO-A3C ]; then
+              sed -i 's/^CONFIG_P480_A3C=y$/# CONFIG_P480_A3C is not set/' "out_$variant/.config"
+            fi
+            cp "out_$variant/.config" "package/$variant/expected.config"
+            make O="$PWD/out_$variant" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+            cmp "out_$variant/.config" "package/$variant/expected.config"
+            make O="$PWD/out_$variant" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+            grep -aFq 'P479 H4 CABLE type=' "out_$variant/arch/arm64/boot/Image"
+            grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' "out_$variant/System.map"
+            if [ "$variant" = A3C ]; then
+              grep -aFq 'P480 A3c CARD register rc=' "out_$variant/arch/arm64/boot/Image"
+              grep -aFq 'P480 A3c LINK_SKIPPED name=' "out_$variant/arch/arm64/boot/Image"
+            else
+              ! grep -aFq 'P480 A3c CARD register rc=' "out_$variant/arch/arm64/boot/Image"
+            fi
+            cp "out_$variant/.config" "package/$variant/.config"
+            cp "out_$variant/System.map" "package/$variant/System.map"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('package/A3C/.config').read_text()
+          b=Path('package/NO-A3C/.config').read_text()
+          assert a.count('CONFIG_P480_A3C=y\n')==1
+          assert b==a.replace('CONFIG_P480_A3C=y\n','# CONFIG_P480_A3C is not set\n')
+          PY
+          # P479-compatible control is the build-tested 55bab repair commit,
+          # NOT the immutable original P479 tag. Disclose this distinction.
+          git worktree add --detach "$RUNNER_TEMP/p479-control" 55babd9c651375580b3c5c10d7f37ac6213e005c
+          base="$RUNNER_TEMP/p479-control"
+          mkdir -p out_CONTROL package/CONTROL
+          cp "$base/ci/build.config" out_CONTROL/.config
+          make -C "$base" O="$PWD/out_CONTROL" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          cmp "$base/ci/build.config" out_CONTROL/.config
+          make -C "$base" O="$PWD/out_CONTROL" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          grep -aFq 'P479 H4 CABLE type=' out_CONTROL/arch/arm64/boot/Image
+          cp out_CONTROL/System.map package/CONTROL/System.map
+          cp out_CONTROL/.config package/CONTROL/.config
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          original=Path('ci/P479.config').read_text()
+          current=Path('package/CONTROL/.config').read_text()
+          j={
+              'source':'55babd9c651375580b3c5c10d7f37ac6213e005c',
+              'source_is_original_p479_baseline':False,
+              'known_PIL_SSR_header_repair_included':True,
+              'control_config_matches_original_P479':current==original,
+              'control_config_sha256':sha('package/CONTROL/.config'),
+              'control_System_map_sha256':sha('package/CONTROL/System.map'),
+              'control_System_map_matches_original':
+                sha('package/CONTROL/System.map')=='26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e',
+              'control_Image_sha256':sha('out_CONTROL/arch/arm64/boot/Image'),
+              'claim_only_buildstamp_changes':False,
+              'flash_authorized':False,
+          }
+          Path('package/CONTROL/P479-source-control.json').write_text(json.dumps(j,indent=2,sort_keys=True)+'\n')
+          print('P479 control built; difference from original P479 source disclosed',j)
+      - name: Download ONLY authenticated final P479 HLT boot reference
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          grep -Fxq 'CONFIG_P480_A3C=y' out/.config
-          grep -Fxq 'CONFIG_P479_H4=y' out/.config
-          grep -Fxq 'CONFIG_SECURITY_SELINUX=y' out/.config
-          test -s out/arch/arm64/boot/Image
-          test -s out/vmlinux
-          test -s out/System.map
-          command -v gh
-          command -v unzip
-          mkdir -p p480-package/archives p480-package/unpack p480-package/output
-          # Permanent original Phase446WX assets, with historical SHA256 pins.
-          # These are INPUTS only, never prior run artifacts or patch chains.
-          gh release download phase446wx-source-backup \
+          mkdir -p package/archive package/input package/audit
+          gh release download p479-equivalence-reference \
             --repo GiulianoB-1/A526B-Mangrove-Kernel \
-            --pattern phase446wx-artifact-12271681215.zip \
-            --pattern phase446wx-boot-template-12272271056.zip \
-            --dir p480-package/archives
+            --pattern p479-reference-14131467025.zip --dir package/archive
           printf '%s  %s\n' \
-            4a67e19ed23935ea6596a76cfc5f28d434cd37b7061ab7bc520a7a0ce8137a6b \
-            p480-package/archives/phase446wx-artifact-12271681215.zip | sha256sum -c -
-          printf '%s  %s\n' \
-            9586df44718ae3a84178ea43e4632db3c988c1652564c4586ed217e84c918efe \
-            p480-package/archives/phase446wx-boot-template-12272271056.zip | sha256sum -c -
-          unzip -p p480-package/archives/phase446wx-artifact-12271681215.zip \
-            boot-final.dtb > p480-package/unpack/boot-final.dtb
-          unzip -p p480-package/archives/phase446wx-boot-template-12272271056.zip \
-            boot-f0bisect-gki-p6-v1.img > p480-package/unpack/inherited-WX-boot.img
-          test -s p480-package/unpack/boot-final.dtb
-          printf '%s  %s\n' \
-            ef0f35ad261a072f301c6f52521c4ff33c59595dd09f4c42df55e7642bbc7b09 \
-            p480-package/unpack/inherited-WX-boot.img | sha256sum -c -
-          # Verify the real archived final boot FDT: an enabled Kona A526B
-          # sound-card node, routing and all 29 selected FE/BE platform phandles.
-          # This is a bind-prerequisite check, NOT proof of runtime audio.
-          # A3c cannot be claimed bind-ready when the original archived WX
-          # DTB lacks the A526B model and audio-routing. Allow ONLY that
-          # exactly-known mismatch to produce a diagnostic report, never a
-          # candidate image. Any other preflight failure remains a hard CI FAIL.
-          if ! python3 ci/p480_boot_dtb_audit.py \
-            --dtb p480-package/unpack/boot-final.dtb \
-            --manifest ci/P480-a3c-native-source.json \
-            --report p480-package/output/P480-embedded-WX-DTB-audio-contract.json; then
-            python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          root = Path('p480-package/output')
-          report = json.loads((root / 'P480-embedded-WX-DTB-audio-contract.json').read_text())
-          assert report['status'] == 'DT_SOUND_BINDING_PREREQUISITES_FAILED'
-          assert report['selected_dai_link_count'] == 29
-          assert report['fdt_tree_count'] == 1
-          assert report['flash_authorized'] is False
-          assert report['hardware_validated'] is False
-          assert len(report['card_candidates']) == 1
-          checks = report['card_candidates'][0]['checks']
-          assert checks == {
-              'compatible_real_kona': True,
-              'enabled_sound_card_node': True,
-              'exact_A526B_card_model': False,
-              'audio_routing_nonempty_even_pairs': False,
-              'platform_name_phandle_lists_aligned': True,
-              'selected_29_FE_BE_platforms_all_resolve': True,
-          }, 'Unexpected DTB regression. Fail closed.'
-          assert report['card_candidates'][0]['audio_routing_string_count'] == 0
-          (root / 'P480-A3c-DTB-BLOCKED-NO-IMAGE.txt').write_text(
-              'P480 A3c kernel compiled, but archived Phase446WX boot DTB is\n'
-              'missing the exact A526B model and audio-routing properties.\n'
-              'Audio bind prerequisites FAILED. No boot image was produced.\n'
-              'DO NOT FLASH. No hardware or audio validation is claimed.\n'
-              'The complete DTB audit report accompanies this file.\n')
-          PY
-            (cd p480-package/output && sha256sum \
-              P480-embedded-WX-DTB-audio-contract.json \
-              P480-A3c-DTB-BLOCKED-NO-IMAGE.txt > SHA256SUMS && \
-              sha256sum -c SHA256SUMS)
-            echo 'blocked=true' >> "$GITHUB_OUTPUT"
-            echo '::warning::Known Phase446WX DTB A3c mismatch: model/audio-routing absent. Packaging BLOCKED, no image generated.'
-            echo 'P480 native kernel build PASS; DTB audio prerequisites FAIL. Packaging BLOCKED, NO IMAGE and NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # Identical Image bytes to the already-linked native direct-source build.
-          gzip -n -c out/arch/arm64/boot/Image > p480-package/unpack/Image.gz
-          NATIVE_SHA="$(sha256sum out/arch/arm64/boot/Image | cut -d' ' -f1)"
-          DTB_SHA="$(sha256sum p480-package/unpack/boot-final.dtb | cut -d' ' -f1)"
-          # Repack only the gzip kernel into the original 96MiB v2 boot template.
-          # Abort on source/DTB drift, missing cmdline tokens, or any other
-          # device-tree, ramdisk, kernel or partition metadata mismatch.
-          python3 ci/p480_boot_repack.py \
-            --source p480-package/unpack/inherited-WX-boot.img \
-            --kernel p480-package/unpack/Image.gz \
-            --output p480-package/unpack/P480-NORMAL-INTERNAL-NO-FLASH.img \
-            --report p480-package/output/P480-normal-repack-contract.json \
-            --expected-template-sha256 ef0f35ad261a072f301c6f52521c4ff33c59595dd09f4c42df55e7642bbc7b09 \
-            --expected-dtb-sha256 "$DTB_SHA" \
-            --expected-native-image-sha256 "$NATIVE_SHA"
-          # HLT variant removes exactly one existing nohlt word; all other
-          # bytes, including the new kernel, SHA1 boot ID, DTB and ramdisk,
-          # must remain bit-identical to the audited P480 normal candidate.
-          python3 ci/p480_hlt_peer.py \
-            --normal p480-package/unpack/P480-NORMAL-INTERNAL-NO-FLASH.img \
-            --hlt p480-package/output/P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img \
-            --image out/arch/arm64/boot/Image \
-            --report p480-package/output/P480-HLT-commandline-contract.json \
-            --expected-dtb-sha256 "$DTB_SHA" --commit "$GITHUB_SHA"
-          # Assert this report is explicitly unverified and nonflashable.
+            44412b170b639ebbbf6615e4a302ec8e4a83e09a934e32da49bbc1c801755230 \
+            package/archive/p479-reference-14131467025.zip | sha256sum -c -
           python3 - <<'PY'
+          import gzip,hashlib,json,zipfile
           from pathlib import Path
-          import json
-          p = Path('p480-package/output')
-          normal = json.loads((p/'P480-normal-repack-contract.json').read_text())
-          hlt = json.loads((p/'P480-HLT-commandline-contract.json').read_text())
-          assert normal['flash_authorized'] is False
-          assert normal['hardware_validated'] is False
-          assert normal['flashable_candidate'] is False
-          assert hlt['flash_authorized'] is False
-          assert hlt['hardware_validated'] is False
-          assert hlt['flashable_candidate'] is False
-          assert all(hlt['invariants'].values())
-          assert all(normal['invariants'].values())
-          dtb = json.loads((p/'P480-embedded-WX-DTB-audio-contract.json').read_text())
-          assert dtb['status'] == 'DT_SOUND_BINDING_PREREQUISITES_PRESENT'
-          assert dtb['hardware_validated'] is False
-          assert dtb['flash_authorized'] is False
-          assert dtb['selected_dai_link_count'] == 29
-          assert dtb['dtb_sha256'] == normal['dtb_sha256']
-          assert hlt['hlt_nohlt'] == 0 and hlt['normal_nohlt'] == 1
-          assert (p/'P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img').stat().st_size == 100663296
-          manifest = json.loads(Path('ci/build-manifest.json').read_text())
-          assert manifest['stage'] == 'P480-A3c-native-candidate'
-          assert manifest['flash_authorized'] is False
-          assert manifest['strict'] is True
-          (p/'README-DO-NOT-FLASH.txt').write_text(
-              'P480 A3c: CI-generated diagnostic boot image, NOT hardware tested.\n'
-              'DO NOT FLASH. Header-v2 source is the pinned Phase446WX backup.\n'
-              'Native Image and the HLT-only cmdline edit were verified in CI.\n'
-              'This output is not an authorization to flash or a hardware PASS.\n')
+          from ci.p480_boot_repack import parse_boot
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          with zipfile.ZipFile('package/archive/p479-reference-14131467025.zip') as z:
+              assert z.namelist().count(m['archive_inner_path'])==1
+              boot=z.read(m['archive_inner_path'])
+          assert hashlib.sha256(boot).hexdigest()==m['original_boot_sha256']
+          assert len(boot)==m['original_boot_size']
+          p=parse_boot(boot)
+          assert hashlib.sha256(p['dtb']).hexdigest()==m['original_boot_dtb_sha256']
+          assert hashlib.sha256(p['ramdisk']).hexdigest()==m['original_ramdisk_sha256']
+          assert hashlib.sha256(gzip.decompress(p['kernel'])).hexdigest()==m['original_uncompressed_kernel_sha256']
+          assert p['cmdline']==m['cmdline']
+          assert 'nohlt' not in p['cmdline'].split()
+          assert Path('ci/P479-boot-dtb.sha256').read_text().split()[0]==m['original_boot_dtb_sha256']
+          Path('package/input/P479-HLT.boot.img').write_bytes(boot)
+          Path('package/audit/P479-template-verified.json').write_text(json.dumps({
+              'P479_boot_sha256':m['original_boot_sha256'],
+              'P479_DTB_sha256':m['original_boot_dtb_sha256'],
+              'P479_ramdisk_sha256':m['original_ramdisk_sha256'],
+              'P479_cmdline':m['cmdline'],
+              'source_release':m['source_release_url'],
+              'flash_authorized':False},indent=2,sort_keys=True)+'\n')
+          print('Exact final P479 HLT source boot and DTB PIN VERIFIED, nohlt absent')
           PY
-          (cd p480-package/output && sha256sum \
-            P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img \
-            P480-normal-repack-contract.json P480-HLT-commandline-contract.json \
-            P480-embedded-WX-DTB-audio-contract.json \
-            README-DO-NOT-FLASH.txt > SHA256SUMS && sha256sum -c SHA256SUMS)
-          echo 'ready=true' >> "$GITHUB_OUTPUT"
-          echo 'P480 A3c boot-v2 diagnostic repack verified: HLT, pinned WX DTB, original ramdisk, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
-          sha256sum p480-package/output/P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload NO-FLASH diagnostic package for offline review
-        if: github.ref == 'refs/heads/feature/p480-a3c-native' && steps.package.outputs.ready == 'true'
+      - name: Repack P479 control and both P480 builds, with zero DTB changes
+        run: |
+          set -Eeuo pipefail
+          for variant in CONTROL A3C NO-A3C; do
+            image="out_$variant/arch/arm64/boot/Image"
+            gzip -n -c "$image" > "package/input/$variant.gz"
+            if [ "$variant" = CONTROL ]; then
+              python3 ci/p480_p479_boot_repack.py \
+                --source package/input/P479-HLT.boot.img \
+                --kernel "package/input/$variant.gz" --native-image "$image" \
+                --variant "P479-control-55babd9" --control \
+                --output package/input/P479-CONTROL-REPACK-NO-FLASH.img \
+                --report package/CONTROL/P479-control-repack.json
+            else
+              python3 ci/p480_p479_boot_repack.py \
+                --source package/input/P479-HLT.boot.img \
+                --kernel "package/input/$variant.gz" --native-image "$image" \
+                --variant "$variant" \
+                --output "package/$variant/P480-$variant-HLT-P479-TEMPLATE-DO-NOT-FLASH.img" \
+                --report "package/$variant/P480-$variant-repack.json"
+            fi
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          comparisons={}
+          for variant in ('CONTROL','A3C','NO-A3C'):
+              p=Path('package')/variant
+              report=p/('P479-control-repack.json' if variant=='CONTROL' else f'P480-{variant}-repack.json')
+              j=json.loads(report.read_text())
+              assert all(j['invariants'].values())
+              assert j['flash_authorized'] is False
+              assert j['original_P479_boot_sha256']==m['original_boot_sha256']
+              assert j['original_P479_DTB_sha256']==j['repacked_DTB_sha256']==m['original_boot_dtb_sha256']
+              assert j['original_P479_ramdisk_sha256']==j['repacked_ramdisk_sha256']==m['original_ramdisk_sha256']
+              assert j['original_P479_cmdline']==j['repacked_cmdline']==m['cmdline']
+              comparisons[variant]={'boot_sha256':j['repacked_boot_sha256'],'image_sha256':j['rebuilt_Image_sha256']}
+          assert comparisons['A3C']['boot_sha256']!=comparisons['NO-A3C']['boot_sha256']
+          (Path('package/audit')/'P479-P480-control-and-twins.json').write_text(json.dumps({
+              'result':'P479_BOOT_TEMPLATE_PRESERVED',
+              'build_commit':'${{ github.sha }}',
+              'A3C_only_config_difference':True,
+              'P479_boot_sha256':m['original_boot_sha256'],
+              'P479_final_DTB_sha256':m['original_boot_dtb_sha256'],
+              'P479_cmdline':m['cmdline'],
+              'variants':comparisons,
+              'source_control_is_55bab_repair_not_original_P479':True,
+              'kernel_differences_only_build_stamps_proven':False,
+              'hardware_audio_verified':False,'flash_authorized':False
+          },indent=2,sort_keys=True)+'\n')
+          print('P479 control and P480 A3C twin: only kernel and header ID/size may change')
+          PY
+          for variant in A3C NO-A3C; do
+            cp ci/P480-test-notes.md "package/$variant/"
+            printf '%s\n' 'P479 FINAL HLT BOOT TEMPLATE, DTB AND RAMDISK UNCHANGED. NO FLASH UNTIL CLAUDE REVIEWS.' \
+              > "package/$variant/README-DO-NOT-FLASH.txt"
+            (cd "package/$variant" && sha256sum \
+              "P480-$variant-HLT-P479-TEMPLATE-DO-NOT-FLASH.img" \
+              "P480-$variant-repack.json" .config System.map > SHA256SUMS &&
+              sha256sum -c SHA256SUMS)
+          done
+          echo 'P480 twins on P479 final HLT boot; P479 control reported, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+          rm -rf package/archive package/input
+      - name: Save P479 control and template provenance audits
         uses: actions/upload-artifact@v4
         with:
-          name: P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH-${{ github.sha }}
-          path: p480-package/output/
+          name: P480-P479-BOOT-CONTROL-${{ github.sha }}
+          path: |
+            package/CONTROL/
+            package/audit/
+            ci/P479-boot-provenance.json
+            ci/P479-boot-dtb.sha256
+            ci/P480-test-notes.md
           if-no-files-found: error
           retention-days: 90
-      - name: Upload DTB-blocked diagnostic report (NO IMAGE, NO FLASH)
-        if: github.ref == 'refs/heads/feature/p480-a3c-native' && steps.package.outputs.blocked == 'true'
+      - name: Save P480-A3C image for review only
         uses: actions/upload-artifact@v4
         with:
-          name: P480-A3c-DTB-BLOCKED-NO-IMAGE-${{ github.sha }}
-          path: |
-            p480-package/output/P480-embedded-WX-DTB-audio-contract.json
-            p480-package/output/P480-A3c-DTB-BLOCKED-NO-IMAGE.txt
-            p480-package/output/SHA256SUMS
+          name: P480-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
+          path: package/A3C/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Save P480-NO-A3C image for review only
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-NO-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
+          path: package/NO-A3C/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 90

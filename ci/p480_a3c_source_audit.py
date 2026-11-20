@@ -151,25 +151,36 @@ def main() -> None:
           "return p480_tg_render_mode(ac, render_mode, 0);" in compat,
           "render mode explicitly preserves original RX direction")
 
+    # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
-    read("ci/p480_hlt_peer.py")
+    read("ci/p480_p479_boot_repack.py")
     read("ci/p480_collect_audio_readonly.sh")
+    read("ci/P479-boot-provenance.json")
+    read("ci/P479-boot-dtb.sha256")
     package = read(".github/workflows/direct-source-build.yml")
-    check("P480-A3c-HLT-UNVERIFIED-DO-NOT-FLASH.img" in package and
+    check("inputs.p480_twins" in package and
+          "if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins }}" in package and
+          "P480-A3C-FINAL-P479-TEMPLATE-" in package and
+          "P480-NO-A3C-FINAL-P479-TEMPLATE-" in package,
+          "one manually gated P480 twin build in native workflow")
+    check("p479-equivalence-reference" in package and
+          "p479-reference-14131467025.zip" in package and
+          "ci/P479-boot-dtb.sha256" in package and
+          "ci/P479-boot-provenance.json" in package,
+          "exact P479 final HLT boot and DTB pins are mandatory")
+    check("phase446wx-source-backup" not in package and
+          "boot-f0bisect-gki-p6-v1.img" not in package and
+          "ci/p480_p479_boot_repack.py" in package and
+          "--control" in package and
+          "repacked_DTB_sha256" in package and
+          "repacked_ramdisk_sha256" in package and
+          "repacked_cmdline" in package and
           "sha256sum -c SHA256SUMS" in package,
-          "diagnostic packaging and SHA256 gate retained")
-    check("if ! python3 ci/p480_boot_dtb_audit.py" in package and
-          "'exact_A526B_card_model': False" in package and
-          "'audio_routing_nonempty_even_pairs': False" in package and
-          "'selected_29_FE_BE_platforms_all_resolve': True" in package and
-          "Unexpected DTB regression. Fail closed." in package,
-          "only exact known WX DTB mismatch may be diagnostic, others fail")
-    check("steps.package.outputs.ready == 'true'" in package and
-          "steps.package.outputs.blocked == 'true'" in package and
-          "P480-A3c-DTB-BLOCKED-NO-IMAGE" in package and
-          "echo 'ready=true' >>" in package and
-          "echo 'blocked=true' >>" in package,
-          "never publish boot image on failed DTB preflight")
+          "template preservation and control checks are fail-closed")
+    check("P480-P479-BOOT-CONTROL-" in package and
+          "A3C_only_config_difference" in package and
+          "source_control_is_55bab_repair_not_original_P479" in package,
+          "P479 control and changed PIL/SSR ABI are reported")
     print("P480 A3c source-only integration contracts PASS; no hardware validation")
 
 
