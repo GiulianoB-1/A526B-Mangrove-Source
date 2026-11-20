@@ -25,12 +25,30 @@ P479 tag, **not** a change enabled by CONFIG_P480_A3C.
 Both P480 A3C and NO-A3C build variants contain it. Review its behavior
 separately; do not label either as identical to the untouched P479 source.
 
-The control build compiles the immutable `p479-baseline` source separately
-and repacks its rebuilt Image with this original P479 HLT boot template.
-It must report Image differences honestly. Unless the raw Image diff has been
-classified, do not claim that any kernel byte differences are *only* build
-stamps. Boot header bookkeeping (kernel_size and boot ID) may change with the
-kernel; all non-kernel payloads and command-line bytes remain identical.
+The control build currently compiles **the later repaired source at commit
+`55babd9c651375580b3c5c10d7f37ac6213e005c`**, not the pristine
+immutable `p479-baseline` source. That distinction matters: the control
+repack preserves the exact P479 final HLT boot DTB, ramdisk and cmdline,
+but the control is NOT a second P479 kernel equivalence proof. The
+separate accepted P479 equivalence proof remains in
+`ci/P479-equivalence-proof.json` and is tied to `p479-baseline`.
+
+The corrected P480 twin CI run 44809264636 reported:
+- P479 repaired-control `.config` SHA256
+  `3d2b45be575df782a1f28d100c8f10705e5e14d9c50273cf51fa2757568e4746`
+  (not identical to P479 original).
+- P479 repaired-control `System.map` SHA256
+  `b535694bad570d653bd684b1c22eff6186c19bec81cac06c63ad0dfda5eb763a`
+  (not identical to P479 original).
+- Rebuilt repaired-control native Image SHA256
+  `fea488cd5e1382f13e283bf3008dd8ac0e9c22125d1027040d69898d6030838d`.
+  Compared with original P479, 23,948,157 of 66,687,488 Image bytes differ;
+  first difference is at offset 66008. These differences are **not proven
+  to be build stamps only**. Review the PIL/SSR path separately.
+
+The kernel-only repacker can update the kernel size and boot ID in the header,
+but no other boot payload or command-line changes are allowed. No control
+repack result is equivalent to hardware validation or flash authorization.
 
 A3C is opt-in, with default-off H4 and no voice/TAS/WSA/DisplayPort codecs.
 P480 runtime behavior is not tested. Both output images and the control are
