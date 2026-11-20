@@ -1,0 +1,71 @@
+name: P480 pinned TouchGrass r02 audio DTBO source evidence (NO FLASH)
+
+on:
+  push:
+    branches:
+      - feature/p480-a3c-native
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tg-r02-audio-overlay-source:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the triggering committed auditor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Fetch exact pinned public TG A52XQ board-r02 DTS
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p p480-tg-r02
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 --max-time 90 \
+            'https://raw.githubusercontent.com/micr0softstore/samsung_android_kernel_a52xq/6bf351bdf18bdb228db79e66f14a7a9c0178e5d7/arch/arm64/boot/dts/samsung/a52/a52xq/a52xq_eur_open_w00_r02.dts' \
+            --output p480-tg-r02/TG-A52XQ-r02-pinned.dts
+          test -s p480-tg-r02/TG-A52XQ-r02-pinned.dts
+          test "$(git hash-object --no-filters p480-tg-r02/TG-A52XQ-r02-pinned.dts)" = \
+            72de76f7bae4b29ccc8663013936c0667a954180
+      - name: Audit original Samsung DTBO source without changing boot DTB
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 ci/p480_tg_r02_overlay_source_audit.py \
+            --reference-dts p480-tg-r02/TG-A52XQ-r02-pinned.dts \
+            --report p480-tg-r02/P480-TG-r02-audio-overlay-source-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('p480-tg-r02')
+          report = json.loads((root/'P480-TG-r02-audio-overlay-source-report.json').read_text())
+          assert report['status'] == 'TG_R02_AUDIO_OVERLAY_SOURCE_PRESENT_UNMERGED'
+          assert report['card_model_from_fragment_2'] == 'lito-lagoonmtp-snd-card'
+          assert report['final_audio_routing_string_count'] == 54
+          assert report['final_routing_from_fragment'] == 126
+          assert report['boot_template_dtb_modified'] is False
+          for flag in ('actual_device_dtbo_verified', 'bootloader_applied_dtbo_verified',
+                       'merged_live_fdt_verified', 'a3c_binding_verified',
+                       'hardware_validated', 'flash_authorized', 'flashable_candidate'):
+              assert report[flag] is False, flag
+          assert not any(root.glob('*.img'))
+          print('PINNED TG SOURCE CHECK PASS; runtime DTBO state UNKNOWN; NO FLASH')
+          PY
+          (cd p480-tg-r02 &&
+            sha256sum P480-TG-r02-audio-overlay-source-report.json > SHA256SUMS &&
+            sha256sum -c SHA256SUMS)
+          echo 'Pinned TG r02 A52XQ source contains model and final audio routing in DTBO fragments. Source-only evidence, runtime merge UNVERIFIED. NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Save source-only diagnostic report (no boot image)
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-TG-r02-OVERLAY-SOURCE-ONLY-${{ github.sha }}
+          path: |
+            p480-tg-r02/P480-TG-r02-audio-overlay-source-report.json
+            p480-tg-r02/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90
