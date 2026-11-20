@@ -31,6 +31,7 @@
 #include <dsp/q6audio-v2.h>
 #include <dsp/q6core.h>
 #include <dsp/q6asm-v2.h>
+#include "p480_q6asm_compat.h"
 #ifdef CONFIG_MSM_BOOT_STATS
 #include <soc/qcom/boot_stats.h>
 #endif
