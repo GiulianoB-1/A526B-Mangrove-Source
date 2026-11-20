@@ -87,6 +87,21 @@ jobs:
           make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
             drivers/a52_pil/subsys-pil-tz.o
+      - name: Fail-fast native A3c compile when P480 is enabled
+        run: |
+          set -Eeuo pipefail
+          if grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config; then
+            test -s drivers/soc/qcom/p472_tg_audio/a3c/kona.c
+            for source in kona msm-pcm-q6-v2 msm-compress-q6-v2 msm-dai-q6-v2; do
+              echo "P480 native A3c compile probe: $source"
+              make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+                CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+                "drivers/soc/qcom/p472_tg_audio/a3c/$source.o"
+            done
+          else
+            test ! -e drivers/soc/qcom/p472_tg_audio/a3c || \
+              echo 'A3c source present but disabled in pinned P479-compatible config'
+          fi
       - name: Build checked-out source, no source patching
         env:
           LOCALVERSION: ''
