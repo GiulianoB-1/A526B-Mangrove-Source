@@ -1,0 +1,42 @@
+{
+  "schema": "P480-four-source-comparison-v1",
+  "purpose": "Claude reviewer comparison only, no boot packaging or flashing",
+  "immutable_p479_tag": "p479-baseline",
+  "pure_baseline_sha": "a040e6cf1e7232fc3e91516416fb7fffa3fc9025",
+  "fixed_pil_ssr_repair_sha": "55babd9c651375580b3c5c10d7f37ac6213e005c",
+  "reference_p479_system_map_sha256": "26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e",
+  "compare_pairs": [
+    {
+      "id": "B",
+      "old": "p479-baseline",
+      "new": "55babd9",
+      "expectation": "only subsys-pil-tz.c and inlined callers may change"
+    },
+    {
+      "id": "C",
+      "old": "55babd9",
+      "new": "P480 NO-A3C",
+      "expectation": "no symbol size change"
+    },
+    {
+      "id": "D",
+      "old": "P480 NO-A3C",
+      "new": "P480 A3C",
+      "expectation": "only A3c symbols added"
+    }
+  ],
+  "config_expected_from_p479": [
+    "CONFIG_CC_CAN_LINK=y",
+    "CONFIG_CC_CAN_LINK_STATIC=y",
+    "# CONFIG_UAPI_HEADER_TEST is not set"
+  ],
+  "pinned_run_semantics": "ONE-SHOT commit marker [P480-COMPARE] in existing native build workflow",
+  "raw_bloat_outputs": [
+    "B-P479-baseline-vs-55babd9.bloat.txt",
+    "C-55babd9-vs-P480-NO-A3C.bloat.txt",
+    "D-P480-NO-A3C-vs-P480-A3C.bloat.txt"
+  ],
+  "review_status": "PENDING_NEW_CI_REPORT",
+  "flash_authorized": false,
+  "output_boot_image": false
+}
