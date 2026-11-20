@@ -36,6 +36,7 @@
 #include <dsp/msm_audio_ion.h>
 #include <dsp/apr_audio-v2.h>
 #include <dsp/q6asm-v2.h>
+#include "p480_q6asm_compat.h"
 #include <dsp/q6core.h>
 #include <dsp/msm-audio-effects-q6-v2.h>
 #include "msm-pcm-routing-v2.h"
