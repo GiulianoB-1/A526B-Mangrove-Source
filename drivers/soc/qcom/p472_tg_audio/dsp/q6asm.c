@@ -103,6 +103,9 @@ struct audio_session {
 	struct audio_client *ac;
 	spinlock_t session_lock;
 	struct mutex mutex_lock_per_session;
+#ifdef CONFIG_P480_A3C
+	bool ignore; /* Donor DSP session-ID conflict retry. */
+#endif
 };
 /* session id: 0 reserved */
 static struct audio_session session[ASM_ACTIVE_STREAMS_ALLOWED + 1];
@@ -600,6 +603,90 @@ static int q6asm_session_alloc(struct audio_client *ac)
 	pr_err("%s: session not available\n", __func__);
 	return -ENOMEM;
 }
+
+#ifdef CONFIG_P480_A3C
+/* P480 native Samsung 5.4 session-ID retry, including APR re-registration. */
+static void q6asm_session_set_ignore(int id)
+{
+	session[id].ignore = true;
+}
+
+static void q6asm_session_clean_ignore(void)
+{
+	int i;
+
+	for (i = 1; i <= ASM_ACTIVE_STREAMS_ALLOWED; i++)
+		session[i].ignore = false;
+}
+
+static void q6asm_session_deregister(struct audio_client *ac)
+{
+	rtac_set_asm_handle(ac->session, NULL);
+	apr_deregister(ac->apr2);
+	apr_deregister(ac->apr);
+	q6asm_mmap_apr_dereg();
+	ac->apr2 = NULL;
+	ac->apr = NULL;
+	ac->mmap_apr = NULL;
+}
+
+static int q6asm_session_register(struct audio_client *ac)
+{
+	ac->apr = apr_register("ADSP", "ASM",
+			(apr_fn)q6asm_callback,
+			((ac->session) << 8 | 0x0001),
+			ac);
+	if (ac->apr == NULL) {
+		pr_err("%s: Registration with APR failed\n", __func__);
+		goto fail_apr1;
+	}
+
+	ac->apr2 = apr_register("ADSP", "ASM",
+			(apr_fn)q6asm_callback,
+			((ac->session) << 8 | 0x0002),
+			ac);
+	if (ac->apr2 == NULL) {
+		pr_err("%s: Registration with APR-2 failed\n", __func__);
+		goto fail_apr2;
+	}
+
+	rtac_set_asm_handle(ac->session, ac->apr);
+
+	pr_debug("%s: Registering the common port with APR\n", __func__);
+	ac->mmap_apr = q6asm_mmap_apr_reg();
+	if (ac->mmap_apr == NULL)
+		goto fail_mmap;
+
+	return 0;
+
+fail_mmap:
+	apr_deregister(ac->apr2);
+fail_apr2:
+	apr_deregister(ac->apr);
+fail_apr1:
+	return -EINVAL;
+}
+
+static int q6asm_session_try_next(struct audio_client *ac)
+{
+	int n;
+	int s = ac->session;
+
+	for (n = 1; n <= ASM_ACTIVE_STREAMS_ALLOWED; n++) {
+		if (++s > ASM_ACTIVE_STREAMS_ALLOWED)
+			s -= ASM_ACTIVE_STREAMS_ALLOWED;
+		if (!session[s].ignore && !session[s].ac) {
+			q6asm_session_deregister(ac);
+			session[ac->session].ac = NULL;
+			session[s].ac = ac;
+			ac->session = s;
+			return q6asm_session_register(ac);
+		}
+	}
+	pr_debug("%s: session not available\n", __func__);
+	return -EINVAL;
+}
+#endif
 
 static int q6asm_get_session_id_from_audio_client(struct audio_client *ac)
 {
@@ -2667,6 +2754,41 @@ EXPORT_SYMBOL(q6asm_cpu_buf_release);
  *
  * Returns buffer pointer on success or NULL on failure
  */
+#ifdef CONFIG_P480_A3C
+/* P480 real lock-free release for callers already holding the port lock. */
+int q6asm_cpu_buf_release_nolock(int dir, struct audio_client *ac)
+{
+	struct audio_port_data *port;
+	int ret = 0;
+	int idx;
+
+	if (!ac || ((dir != IN) && (dir != OUT))) {
+		pr_err("%s: ac %pK dir %d\n", __func__, ac, dir);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (ac->io_mode & SYNC_IO_MODE) {
+		port = &ac->port[dir];
+		idx = port->cpu_buf;
+		if (port->cpu_buf == 0) {
+			port->cpu_buf = port->max_buf_cnt - 1;
+		} else if (port->cpu_buf < port->max_buf_cnt) {
+			port->cpu_buf = port->cpu_buf - 1;
+		} else {
+			pr_err("%s: buffer index(%d) out of range\n",
+				__func__, port->cpu_buf);
+			ret = -EINVAL;
+			goto exit;
+		}
+		port->buf[port->cpu_buf].used = dir ^ 1;
+	}
+exit:
+	return ret;
+}
+EXPORT_SYMBOL(q6asm_cpu_buf_release_nolock);
+#endif
+
 void *q6asm_is_cpu_buf_avail_nolock(int dir, struct audio_client *ac,
 					uint32_t *size, uint32_t *index)
 {
@@ -3372,6 +3494,48 @@ int q6asm_open_read_v5(struct audio_client *ac, uint32_t format,
 }
 EXPORT_SYMBOL(q6asm_open_read_v5);
 
+#ifdef CONFIG_P480_A3C
+/* P480 native ASM version selection and session conflict retry. */
+static int q6asm_open_read_version_adaptor(struct audio_client *ac,
+			uint32_t format, uint16_t bits_per_sample, bool ts_mode)
+{
+	if (q6core_get_avcs_api_version_per_service(
+			APRV2_IDS_SERVICE_ID_ADSP_ASM_V) >=
+			ADSP_ASM_API_VERSION_V2)
+		return q6asm_open_read_v5(ac, FORMAT_LINEAR_PCM,
+						bits_per_sample, false, ENC_CFG_ID_NONE);
+	else
+		return q6asm_open_read_v4(ac, FORMAT_LINEAR_PCM,
+						bits_per_sample, false, ENC_CFG_ID_NONE);
+}
+
+int q6asm_open_read_with_retry(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample, bool ts_mode)
+{
+	int i = 0, rc = 0;
+
+	mutex_lock(&session_lock);
+	for (i = 0; i < ASM_ACTIVE_STREAMS_ALLOWED; i++) {
+		rc = q6asm_open_read_version_adaptor(ac, format,
+				bits_per_sample, ts_mode);
+		if (rc != -EALREADY)
+			break;
+
+		pr_debug("%s: session %d is occupied, try next\n",
+				__func__, ac->session);
+		q6asm_session_set_ignore(ac->session);
+		rc = q6asm_session_try_next(ac);
+		if (rc < 0)
+			break;
+	}
+	q6asm_session_clean_ignore();
+	mutex_unlock(&session_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(q6asm_open_read_with_retry);
+#endif
+
 
 /**
  * q6asm_open_write_compressed -
@@ -3702,6 +3866,45 @@ int q6asm_open_write_v4(struct audio_client *ac, uint32_t format,
 				  PCM_MEDIA_FORMAT_V4 /*pcm_format_block_ver*/);
 }
 EXPORT_SYMBOL(q6asm_open_write_v4);
+
+#ifdef CONFIG_P480_A3C
+static int q6asm_open_write_version_adaptor(struct audio_client *ac,
+			uint32_t format, uint16_t bits_per_sample)
+{
+	if (q6core_get_avcs_api_version_per_service(
+			APRV2_IDS_SERVICE_ID_ADSP_ASM_V) >=
+			ADSP_ASM_API_VERSION_V2)
+		return q6asm_open_write_v5(ac, format, bits_per_sample);
+	else
+		return q6asm_open_write_v4(ac, format, bits_per_sample);
+}
+
+int q6asm_open_write_with_retry(struct audio_client *ac, uint32_t format,
+			uint16_t bits_per_sample)
+{
+	int i = 0, rc = 0;
+
+	mutex_lock(&session_lock);
+	for (i = 0; i < ASM_ACTIVE_STREAMS_ALLOWED; i++) {
+		rc = q6asm_open_write_version_adaptor(ac, format,
+						bits_per_sample);
+		if (rc != -EALREADY)
+			break;
+
+		pr_debug("%s: session %d is occupied, try next\n",
+				__func__, ac->session);
+		q6asm_session_set_ignore(ac->session);
+		rc = q6asm_session_try_next(ac);
+		if (rc < 0)
+			break;
+	}
+	q6asm_session_clean_ignore();
+	mutex_unlock(&session_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(q6asm_open_write_with_retry);
+#endif
 
 int q6asm_stream_open_write_v2(struct audio_client *ac, uint32_t format,
 			       uint16_t bits_per_sample, int32_t stream_id,
