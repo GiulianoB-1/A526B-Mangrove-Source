@@ -11,6 +11,10 @@ on:
         description: 'P480 A3C and NO-A3C with exact P479 HLT boot, NO FLASH'
         type: boolean
         default: false
+      p480_compare:
+        description: 'Claude symbol-size comparison: pure P479, 55babd9, P480 NO-A3C, P480 A3C (NO FLASH)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,7 +25,7 @@ concurrency:
 
 jobs:
   compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.p480_twins }}
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]'))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -157,7 +161,7 @@ jobs:
           echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
   dual:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -171,6 +175,10 @@ jobs:
           set -Eeuo pipefail
           git merge-base --is-ancestor "$(git rev-list -n1 p479-baseline)" HEAD
           git merge-base --is-ancestor 55babd9c651375580b3c5c10d7f37ac6213e005c HEAD
+          if [ "${{ inputs.p480_twins }}" = true ] && [ "${{ inputs.p480_compare }}" = true ]; then
+            echo "::error::Choose P480 twin boot images OR source comparison, not both."
+            exit 1
+          fi
           grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config
           grep -Fxq 'CONFIG_P479_H4=y' ci/build.config
           test ! -e KernelSU/.git
@@ -246,7 +254,22 @@ jobs:
           }
           Path('package/CONTROL/P479-source-control.json').write_text(json.dumps(j,indent=2,sort_keys=True)+'\n')
           print('P479 control built; difference from original P479 source disclosed',j)
+      - name: Build pristine P479 and compare all four vmlinux symbol tables (NO FLASH)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]')) }}
+        run: |
+          set -Eeuo pipefail
+          bash -n ci/p480_symbol_comparison.sh
+          bash ci/p480_symbol_comparison.sh
+      - name: Upload all three full bloat-o-meter reports and complete config diffs
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P479-P480-FOUR-SOURCE-SYMBOL-EVIDENCE-${{ github.sha }}
+          path: package/symbol-review/
+          if-no-files-found: warn
+          retention-days: 90
       - name: Download ONLY authenticated final P479 HLT boot reference
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -286,6 +309,7 @@ jobs:
           print('Exact final P479 HLT source boot and DTB PIN VERIFIED, nohlt absent')
           PY
       - name: Repack P479 control and both P480 builds, with zero DTB changes
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
         run: |
           set -Eeuo pipefail
           for variant in CONTROL A3C NO-A3C; do
@@ -350,6 +374,7 @@ jobs:
           echo 'P480 twins on P479 final HLT boot; P479 control reported, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           rm -rf package/archive package/input
       - name: Save P479 control and template provenance audits
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-P479-BOOT-CONTROL-${{ github.sha }}
@@ -362,6 +387,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save P480-A3C image for review only
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
@@ -370,6 +396,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save P480-NO-A3C image for review only
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-NO-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
