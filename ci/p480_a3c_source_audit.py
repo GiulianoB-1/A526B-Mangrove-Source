@@ -159,10 +159,16 @@ def main() -> None:
     read("ci/P479-boot-dtb.sha256")
     package = read(".github/workflows/direct-source-build.yml")
     check("inputs.p480_twins" in package and
-          "if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins }}" in package and
+          "inputs.p480_compare" in package and
+          "if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}" in package and
+          "if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare))" in package and
           "P480-A3C-FINAL-P479-TEMPLATE-" in package and
           "P480-NO-A3C-FINAL-P479-TEMPLATE-" in package,
-          "one manually gated P480 twin build in native workflow")
+          "twin boots manually gated; one-shot comparison cannot package boots")
+    check("bash ci/p480_symbol_comparison.sh" in package and
+          "P479-P480-FOUR-SOURCE-SYMBOL-EVIDENCE-" in package and
+          "if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}" in package,
+          "comparison runs only evidence; never boot packaging")
     check("p479-equivalence-reference" in package and
           "p479-reference-14131467025.zip" in package and
           "ci/P479-boot-dtb.sha256" in package and
