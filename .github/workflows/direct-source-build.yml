@@ -71,7 +71,13 @@ jobs:
           PY
           make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
-          cmp ci/build.config out/.config
+          # Preserve the byte-for-byte config gate. On failure, expose drift
+          # so we can correct the toolchain instead of weakening verification.
+          if ! cmp -s ci/build.config out/.config; then
+            echo '::error::Native olddefconfig changed the pinned source configuration'
+            diff -u ci/build.config out/.config | head -n 140 || true
+            exit 1
+          fi
       - name: Build checked-out source, no source patching
         env:
           LOCALVERSION: ''
