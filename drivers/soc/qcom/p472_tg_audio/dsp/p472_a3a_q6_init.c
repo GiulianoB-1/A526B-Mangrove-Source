@@ -91,28 +91,27 @@ static int __init p472_a3a_start(void)
 	pr_info("P472 A3a Q6 lsm registered rc=0\n");
 
 #ifdef CONFIG_P480_A3C
-	/* Explicit order: A2a -> A3a services -> A3c platform -> machine. */
+	/* Order: calibrated A2a -> A3a services -> A3c platform -> machine.
+	 * A3c is non-critical and must never tear down the working Q6 stack.
+	 */
 	rc = p480_audio_platform_init();
 	if (rc) {
-		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d\n", rc);
-		goto undo_lsm;
+		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d; A3a preserved\n", rc);
+		goto a3c_nonfatal;
 	}
 	rc = p480_kona_machine_init();
 	if (rc) {
-		pr_err("P480 A3c MACHINE_SKIPPED reason=machine_register_failed rc=%d\n", rc);
+		pr_err("P480 A3c MACHINE_SKIPPED reason=machine_register_failed rc=%d; A3a preserved\n", rc);
 		p480_audio_platform_exit();
-		goto undo_lsm;
+		goto a3c_nonfatal;
 	}
 	pr_info("P480 A3c INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=1\n");
+a3c_nonfatal:
 #endif
 
 	/* Only log versions returned by the actual ADSP. */
 	schedule_delayed_work(&p472_a3a_version_job, 10 * HZ);
 	return 0;
-#ifdef CONFIG_P480_A3C
-undo_lsm:
-	q6lsm_exit();
-#endif
 undo_asm:
 	q6asm_exit();
 undo_afe:
