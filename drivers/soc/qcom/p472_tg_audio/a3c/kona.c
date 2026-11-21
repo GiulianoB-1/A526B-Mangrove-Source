@@ -183,6 +183,8 @@ enum {
 };
 struct msm_asoc_mach_data {
 	struct snd_info_entry *codec_root;
+	bool codec_reg_done; /* one genuine RX init per card lifetime */
+	bool rx_init_started;
 	int usbc_en2_gpio; /* used by gpio driver API */
 	int lito_v2_enabled;
 	struct device_node *dmic01_gpio_p; /* used by pinctrl API */
@@ -896,8 +898,6 @@ static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_tx, bt_sample_rate_tx_text);
 static SOC_ENUM_SINGLE_EXT_DECL(afe_loopback_tx_chs, afe_loopback_tx_ch_text);
 
 static bool is_initial_boot;
-static bool codec_reg_done;
-static struct snd_soc_aux_dev *msm_aux_dev;
 static struct snd_soc_card snd_soc_card_kona_msm;
 static int dmic_0_1_gpio_cnt;
 static int dmic_2_3_gpio_cnt;
@@ -5466,13 +5466,20 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_card *card;
 	struct snd_info_entry *entry;
 	struct snd_soc_component *aux_comp;
-	struct platform_device *pdev = NULL;
-	int i = 0;
 	bool is_wcd937x_used = false;
-	char *data = NULL;
+	bool has_wsa;
 	struct msm_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(rtd->card);
 
+	/* ASoC tears down widgets and controls if card binding fails.
+	 * Never reuse an old probe's completion flag. A new card lifetime
+	 * needs fresh controls, but a single lifetime must not initialize twice.
+	 */
+	if (pdata->codec_reg_done)
+		return 0;
+	if (pdata->rx_init_started)
+		return -EBUSY;
+	pdata->rx_init_started = true;
 	component = snd_soc_rtdcom_lookup(rtd, "bolero_codec");
 	if (!component) {
 		pr_err("%s: could not find component for bolero_codec\n",
@@ -5501,8 +5508,10 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	msm_add_mi2s_snd_controls(component);
 	msm_add_auxpcm_snd_controls(component);
 
-	snd_soc_dapm_new_controls(dapm, msm_int_dapm_widgets,
-				ARRAY_SIZE(msm_int_dapm_widgets));
+	ret = snd_soc_dapm_new_controls(dapm, msm_int_dapm_widgets,
+					ARRAY_SIZE(msm_int_dapm_widgets));
+	if (ret < 0)
+		return ret;
 
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic0");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
@@ -5519,66 +5528,51 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "Analog Mic4");
 	snd_soc_dapm_ignore_suspend(dapm, "Analog Mic5");
 
-	snd_soc_dapm_ignore_suspend(dapm, "WSA_SPK1 OUT");
-	snd_soc_dapm_ignore_suspend(dapm, "WSA_SPK2 OUT");
-	snd_soc_dapm_ignore_suspend(dapm, "WSA AIF VI");
-	snd_soc_dapm_ignore_suspend(dapm, "VIINPUT_WSA");
-
+	/* A52 r02 has no WSA macro. Do not invoke even the WSA helper
+	 * stubs or touch its widgets unless this macro is actually registered.
+	 */
+	has_wsa = IS_ENABLED(CONFIG_WSA_MACRO) &&
+		bolero_get_device_ptr(component->dev, WSA_MACRO);
+	if (has_wsa) {
+		snd_soc_dapm_ignore_suspend(dapm, "WSA_SPK1 OUT");
+		snd_soc_dapm_ignore_suspend(dapm, "WSA_SPK2 OUT");
+		snd_soc_dapm_ignore_suspend(dapm, "WSA AIF VI");
+		snd_soc_dapm_ignore_suspend(dapm, "VIINPUT_WSA");
+		list_for_each_entry(aux_comp, &rtd->card->aux_comp_list,
+				    card_aux_list) {
+			if (aux_comp->name &&
+			    (!strcmp(aux_comp->name, WSA8810_NAME_1) ||
+			     !strcmp(aux_comp->name, WSA8810_NAME_2))) {
+				wsa_macro_set_spkr_mode(component,
+							WSA_MACRO_SPKR_MODE_1);
+				wsa_macro_set_spkr_gain_offset(component,
+							WSA_MACRO_GAIN_OFFSET_M1P5_DB);
+			} else if (aux_comp->name &&
+				   (!strcmp(aux_comp->name, WSA8815_NAME_1) ||
+				    !strcmp(aux_comp->name, WSA8815_NAME_2))) {
+				wsa_macro_set_spkr_mode(component,
+							WSA_MACRO_SPKR_MODE_DEFAULT);
+			}
+		}
+	} else {
+		dev_info(component->dev, "P480 A3c WSA_INIT_SKIPPED reason=MACRO_NOT_PRESENT\n");
+	}
 	snd_soc_dapm_sync(dapm);
 
-	/*
-	 * Send speaker configuration only for WSA8810.
-	 * Default configuration is for WSA8815.
+	/* AUX components have already been bound by the 5.10 ASoC core.
+	 * Use those actual components, never the removed static AUX array.
 	 */
-	dev_dbg(component->dev, "%s: Number of aux devices: %d\n",
-		__func__, rtd->card->num_aux_devs);
-	if (rtd->card->num_aux_devs &&
-	    !list_empty(&rtd->card->component_dev_list)) {
-		list_for_each_entry(aux_comp,
-				&rtd->card->aux_comp_list,
-				card_aux_list) {
-			if (aux_comp->name != NULL && (
-				!strcmp(aux_comp->name, WSA8810_NAME_1) ||
-		    		!strcmp(aux_comp->name, WSA8810_NAME_2))) {
-				wsa_macro_set_spkr_mode(component,
-						WSA_MACRO_SPKR_MODE_1);
-				wsa_macro_set_spkr_gain_offset(component,
-						WSA_MACRO_GAIN_OFFSET_M1P5_DB);
-			} else if (aux_comp->name != NULL && (
-				!strcmp(aux_comp->name, WSA8815_NAME_1) ||
-		    		!strcmp(aux_comp->name, WSA8815_NAME_2))) {
-				wsa_macro_set_spkr_mode(component,
-						WSA_MACRO_SPKR_MODE_DEFAULT);
-			}
-		}
-	}
-
-	for (i = 0; i < rtd->card->num_aux_devs; i++)
-	{
-		if (msm_aux_dev[i].dlc.name != NULL ) {
-			if (strstr(msm_aux_dev[i].dlc.name, "wsa"))
-				continue;
-		}
-
-		if (msm_aux_dev[i].dlc.of_node) {
-			pdev = of_find_device_by_node(
-					msm_aux_dev[i].dlc.of_node);
-
-			if (pdev)
-				data = (char*) of_device_get_match_data(
-								&pdev->dev);
-			if (data != NULL) {
-				if (!strncmp(data, "wcd937x",
-						sizeof("wcd937x"))) {
-					is_wcd937x_used = true;
-					break;
-				}
-			}
+	list_for_each_entry(aux_comp, &rtd->card->aux_comp_list, card_aux_list) {
+		if (aux_comp->driver && aux_comp->driver->name &&
+		    !strncmp(aux_comp->driver->name, "wcd937x", 7)) {
+			is_wcd937x_used = true;
+			break;
 		}
 	}
 
 	if (is_wcd937x_used) {
-		bolero_set_port_map(component,
+		dev_info(component->dev, "P480 A3c PORT_MAP=wcd937x\n");
+		ret = bolero_set_port_map(component,
 				    ARRAY_SIZE(sm_port_map_wcd937x),
 				    sm_port_map_wcd937x);
 	} else if (pdata->lito_v2_enabled) {
@@ -5586,31 +5580,35 @@ static int msm_int_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		 * Enable tx data line3 for saipan version v2 and
 		 * write corresponding lpi register.
 		 */
-		bolero_set_port_map(component, ARRAY_SIZE(sm_port_map_v2),
+		dev_info(component->dev, "P480 A3c PORT_MAP=sm_port_map_v2\n");
+		ret = bolero_set_port_map(component, ARRAY_SIZE(sm_port_map_v2),
 				    sm_port_map_v2);
 	} else {
-		bolero_set_port_map(component, ARRAY_SIZE(sm_port_map),
+		dev_info(component->dev, "P480 A3c PORT_MAP=sm_port_map\n");
+		ret = bolero_set_port_map(component, ARRAY_SIZE(sm_port_map),
 				    sm_port_map);
 	}
+	if (ret)
+		return ret;
 
 	card = rtd->card->snd_card;
 	if (!pdata->codec_root) {
 		entry = msm_snd_info_create_subdir(card->module, "codecs",
 						 card->proc_root);
-		if (!entry) {
-			pr_debug("%s: Cannot create codecs module entry\n",
-				 __func__);
-			ret = 0;
-			goto err;
-		}
-		pdata->codec_root = entry;
+		if (!entry)
+			dev_warn(component->dev, "%s: Cannot create codecs module entry\n", __func__);
+		else
+			pdata->codec_root = entry;
 	}
-	bolero_info_create_codec_entry(pdata->codec_root, component);
-	bolero_register_wake_irq(component, false);
-	codec_reg_done = true;
+	if (pdata->codec_root)
+		bolero_info_create_codec_entry(pdata->codec_root, component);
+	ret = bolero_register_wake_irq(component, false);
+	if (ret)
+		return ret;
+	pdata->codec_reg_done = true;
+	dev_info(component->dev, "P480 A3c AUDRX_INIT rc=0 link=%s\n",
+		 rtd->dai_link->name);
 	return 0;
-err:
-	return ret;
 }
 
 static void *def_wcd_mbhc_cal(void)
@@ -7776,9 +7774,12 @@ static const char *p480_skip_reason(const struct snd_soc_card *card,
 	return NULL;
 }
 
-static void p480_filter_links(struct snd_soc_card *card)
+static int p480_filter_links(struct snd_soc_card *card)
 {
 	int i, used = 0;
+	bool wsa_init_skipped = false;
+	struct snd_soc_dai_link *rx0 = NULL;
+	int init_count = 0;
 
 	p480_skipped = 0;
 	/* Only the probe-owned link table may be compacted. The donor
@@ -7789,6 +7790,10 @@ static void p480_filter_links(struct snd_soc_card *card)
 		const char *reason = p480_skip_reason(card, link);
 
 		if (reason) {
+			if (link->no_pcm &&
+			    link->id == MSM_BACKEND_DAI_WSA_CDC_DMA_RX_0 &&
+			    link->init == msm_int_audrx_init)
+				wsa_init_skipped = true;
 			dev_info(card->dev, "P480 A3c LINK_SKIPPED name=%s reason=%s\n",
 				 link->name ? link->name : "UNNAMED", reason);
 			p480_skipped++;
@@ -7799,6 +7804,27 @@ static void p480_filter_links(struct snd_soc_card *card)
 		used++;
 	}
 	card->num_links = used;
+
+	/* Transfer the donor's initialization only if WSA RX0 was skipped.
+	 * Both endpoints use bolero. Never modify a static link template.
+	 */
+	for (i = 0; i < card->num_links; i++) {
+		struct snd_soc_dai_link *link = &card->dai_link[i];
+
+		if (link->init == msm_int_audrx_init)
+			init_count++;
+		if (link->no_pcm &&
+		    link->id == MSM_BACKEND_DAI_RX_CDC_DMA_RX_0)
+			rx0 = link;
+	}
+	if (wsa_init_skipped) {
+		if (init_count || !rx0 || rx0->init)
+			return -EINVAL;
+		rx0->init = msm_int_audrx_init;
+		dev_info(card->dev,
+			 "P480 A3c INIT_MOVED fn=msm_int_audrx_init from=WSA_CDC_DMA_RX_0 to=RX_CDC_DMA_RX_0\n");
+	}
+	return 0;
 }
 
 /* QUAT/SENARY are optional on the diagnostic card. Inspect actual
@@ -7929,6 +7955,94 @@ keep:
 	return 0;
 }
 
+/* The shared lagoon DT includes split TX endpoints that the actual
+ * WCD938x driver does not expose. Do not prune any other pair.
+ */
+static bool p480_legacy_adc_output(const char *name)
+{
+	static const char * const names[] = {
+		"ADC1_OUTPUT", "ADC2_OUTPUT", "ADC3_OUTPUT", "ADC4_OUTPUT",
+	};
+	int i;
+
+	if (!name)
+		return false;
+	for (i = 0; i < ARRAY_SIZE(names); i++)
+		if (!strcmp(name, names[i]))
+			return true;
+	return false;
+}
+
+static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
+{
+	struct snd_soc_dapm_route *routes;
+	bool has_wcd938x = false, has_wcd937x = false;
+	int i, j, kept = 0, skipped = 0;
+
+	/* Match genuine registered AUX component drivers using the very same
+	 * OF descriptors ASoC will bind; do not infer from a board name.
+	 * A missing AUX DAI must defer before deciding the codec topology.
+	 */
+	for (i = 0; i < card->num_aux_devs; i++) {
+		struct snd_soc_dai *dai =
+			snd_soc_find_dai_with_mutex(&card->aux_dev[i].dlc);
+		const char *driver;
+
+		if (!dai || !dai->component || !dai->component->driver)
+			return -EPROBE_DEFER;
+		driver = dai->component->driver->name;
+		if (driver && !strncmp(driver, "wcd938x", 7))
+			has_wcd938x = true;
+		if (driver && !strncmp(driver, "wcd937x", 7))
+			has_wcd937x = true;
+	}
+	/* A retained link could also bind a WCD937x codec. */
+	for (i = 0; i < card->num_links; i++)
+		for (j = 0; j < card->dai_link[i].num_codecs; j++) {
+			struct snd_soc_dai *dai = snd_soc_find_dai_with_mutex(
+						&card->dai_link[i].codecs[j]);
+			const char *driver;
+
+			if (!dai || !dai->component || !dai->component->driver)
+				return -EPROBE_DEFER;
+			driver = dai->component->driver->name;
+			if (driver && !strncmp(driver, "wcd937x", 7))
+				has_wcd937x = true;
+		}
+
+	/* snd_soc_of_parse_audio_routing allocated these routes for this
+	 * probe. Copy rather than write through a const pointer.
+	 */
+	if (!has_wcd938x || has_wcd937x) {
+		dev_info(card->dev, "P480 A3c ROUTES kept=%d skipped=0\n",
+			 card->num_of_dapm_routes);
+		return 0;
+	}
+	routes = devm_kcalloc(card->dev, card->num_of_dapm_routes,
+			     sizeof(*routes), GFP_KERNEL);
+	if (!routes)
+		return -ENOMEM;
+	for (i = 0; i < card->num_of_dapm_routes; i++) {
+		const struct snd_soc_dapm_route *route = &card->of_dapm_routes[i];
+
+		if (p480_legacy_adc_output(route->sink) ||
+		    p480_legacy_adc_output(route->source)) {
+			dev_info(card->dev,
+				 "P480 A3c ROUTE_SKIPPED sink=%s source=%s reason=WCD937X_ONLY_WIDGET\n",
+				 route->sink, route->source);
+			skipped++;
+			continue;
+		}
+		routes[kept++] = *route;
+		dev_info(card->dev, "P480 A3c ROUTE_KEPT sink=%s source=%s\n",
+			 route->sink, route->source);
+	}
+	card->of_dapm_routes = routes;
+	card->num_of_dapm_routes = kept;
+	dev_info(card->dev, "P480 A3c ROUTES kept=%d skipped=%d\n", kept, skipped);
+	return 0;
+}
+
 static void p480_log_real_device_counts(struct snd_soc_card *card)
 {
     int pcm = 0, compress = 0;
@@ -7943,6 +8057,8 @@ static void p480_log_real_device_counts(struct snd_soc_card *card)
     }
     dev_info(card->dev, "P480 A3c DEVICES pcm=%d compress=%d\n",
              pcm, compress);
+    dev_info(card->dev, "P480 A3c KCONTROLS count=%d\n",
+             card->snd_card->controls_count);
 }
 
 /* ASoC normally prints only a DAI name, which can be NULL after the
@@ -8052,7 +8168,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	p480_filter_links(card);
+	ret = p480_filter_links(card);
+	if (ret)
+		goto err;
 	if (!card->num_links) {
 		ret = -ENODEV;
 		goto err;
@@ -8077,6 +8195,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		goto err;
 	}
 	ret = msm_init_aux_dev(pdev, card);
+	if (ret)
+		goto err;
+	ret = p480_filter_wcd938x_routes(card);
 	if (ret)
 		goto err;
 
