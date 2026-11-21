@@ -7833,6 +7833,102 @@ static void p480_filter_optional_mi2s(struct snd_soc_card *card)
 	card->num_links = used;
 }
 
+/* Linux 5.10's soc_new_pcm() requires each requested DPCM direction
+ * to exist on a real, registered CPU DAI. TG 4.19 permitted BE links
+ * with channels_min=0 in one direction. Do not change DAI capabilities:
+ * trim the link direction only, on this probe's devm-owned link copy.
+ *
+ * Run after CPU name -> DT OF-node population and optional MI2S skips,
+ * but before ASoC creates any PCM. Required missing CPU DAIs still
+ * fail closed as -EPROBE_DEFER.
+ */
+static int p480_filter_cpu_stream_directions(struct snd_soc_card *card)
+{
+	int i, j, used = 0;
+
+	for (i = 0; i < card->num_links; i++) {
+		struct snd_soc_dai_link *link = &card->dai_link[i];
+		const char *name = link->name ? link->name : "UNNAMED";
+		bool playback = false, capture = false;
+		bool clear_playback, clear_capture;
+		const char *reason = NULL;
+
+		if (!link->no_pcm && !link->dynamic)
+			goto keep;
+
+		if (!link->num_cpus) {
+			dev_warn(card->dev,
+				 "P480 A3c DEFER_MISSING link=%s kind=CPU reason=empty_cpu_list\n",
+				 name);
+			return -EPROBE_DEFER;
+		}
+		for (j = 0; j < link->num_cpus; j++) {
+			struct snd_soc_dai *dai =
+				snd_soc_find_dai_with_mutex(&link->cpus[j]);
+
+			if (!dai) {
+				dev_warn(card->dev,
+					 "P480 A3c DEFER_MISSING link=%s kind=CPU index=%d name=%s dai=%s node=%pOF\n",
+					 name, j,
+					 link->cpus[j].name ?: "OF",
+					 link->cpus[j].dai_name ?: "OF",
+					 link->cpus[j].of_node);
+				return -EPROBE_DEFER;
+			}
+			if (snd_soc_dai_stream_valid(dai,
+						SNDRV_PCM_STREAM_PLAYBACK))
+				playback = true;
+			if (snd_soc_dai_stream_valid(dai,
+						SNDRV_PCM_STREAM_CAPTURE))
+				capture = true;
+		}
+		clear_playback = link->dpcm_playback && !playback;
+		clear_capture = link->dpcm_capture && !capture;
+
+		/* Log one reason for a fully invalid link. For a link that
+		 * still has a valid direction, keep it and log each trim.
+		 */
+		if (!(link->dpcm_playback && !clear_playback) &&
+		    !(link->dpcm_capture && !clear_capture)) {
+			if (clear_playback && clear_capture)
+				reason = "CPU_DAI_NO_STREAMS";
+			else if (clear_playback)
+				reason = "CPU_DAI_NO_PLAYBACK";
+			else if (clear_capture)
+				reason = "CPU_DAI_NO_CAPTURE";
+			else
+				reason = "CPU_DAI_NO_STREAMS";
+			dev_info(card->dev,
+				 "P480 A3c LINK_SKIPPED name=%s reason=%s\n",
+				 name, reason);
+			p480_skipped++;
+			continue;
+		}
+
+		if (clear_playback) {
+			link->dpcm_playback = 0;
+			dev_info(card->dev,
+				 "P480 A3c LINK_DIR_TRIM name=%s cleared=playback\n",
+				 name);
+		}
+		if (clear_capture) {
+			link->dpcm_capture = 0;
+			dev_info(card->dev,
+				 "P480 A3c LINK_DIR_TRIM name=%s cleared=capture\n",
+				 name);
+		}
+keep:
+		dev_info(card->dev,
+			 "P480 A3c LINK_KEPT name=%s playback=%d capture=%d\n",
+			 name, link->dpcm_playback, link->dpcm_capture);
+		if (i != used)
+			card->dai_link[used] = *link;
+		used++;
+	}
+	card->num_links = used;
+	return 0;
+}
+
 static void p480_log_real_device_counts(struct snd_soc_card *card)
 {
     int pcm = 0, compress = 0;
@@ -7973,16 +8069,33 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		ret = -ENODEV;
 		goto err;
 	}
+	ret = p480_filter_cpu_stream_directions(card);
+	if (ret)
+		goto err;
+	if (!card->num_links) {
+		ret = -ENODEV;
+		goto err;
+	}
 	ret = msm_init_aux_dev(pdev, card);
 	if (ret)
 		goto err;
 
+	/* Fail closed on missing route widgets. A successful registration
+	 * means the ASoC core accepted all DT routes.
+	 */
+	card->disable_route_checks = false;
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	dev_info(&pdev->dev,
 		"P480 A3c CARD register rc=%d name=%s links=%d skipped=%d\n",
 		ret, card->name, card->num_links, p480_skipped);
-	if (!ret)
+	if (!ret) {
+		dev_info(&pdev->dev,
+			 "P480 A3c ROUTES added=%u failed=0\n",
+			 card->num_of_dapm_routes);
+		dev_info(&pdev->dev, "P480 A3c CARD_NUMBER number=%d\n",
+			 card->snd_card->number);
 		p480_log_real_device_counts(card);
+	}
 	if (ret == -EPROBE_DEFER) {
 		p480_log_deferred_components(card);
 		goto err;
