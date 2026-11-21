@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   compile:
-    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]'))) }}
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]')))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -403,4 +403,36 @@ jobs:
           path: package/NO-A3C/
           include-hidden-files: true
           if-no-files-found: error
+          retention-days: 90
+  original-reference-audit:
+    name: Original P479 ELF and header provenance (NO FLASH)
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[P479-HEADERS]') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout pinned direct-source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install native toolchain and DWARF type probe
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu dwarves
+      - name: Compare authenticated original P479 ELF and duplicate header users
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile ci/p479_reference_header_audit.py
+          python3 ci/p479_reference_header_audit.py
+      - name: Upload complete reference and Kbuild evidence (NO FLASH)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P479-ELF-HEADER-SYMBOL-REVIEW-${{ github.sha }}
+          path: p479-reference-audit/
+          if-no-files-found: warn
           retention-days: 90
