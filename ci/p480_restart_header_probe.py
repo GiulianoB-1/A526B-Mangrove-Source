@@ -64,7 +64,26 @@ flags=["make","O="+str(out),"ARCH=arm64","CROSS_COMPILE=aarch64-linux-gnu-",
 cmd(flags+["olddefconfig"],"olddefconfig.log")
 assert (out/".config").read_text()==config
 cmd(flags+["prepare","scripts"],"prepare.log")
-compilation=cmd(flags+["-j8"]+ordinary+["drivers/platform/msm/ipa/ipam.o", "drivers/a52_pil/subsystem_restart.o"],"target-objects.log",required=False)
+# Standalone objects compile directly; IPA objects are members of
+# the ipam-y composite in drivers/platform/msm/ipa/Makefile.
+first=cmd(flags+["-j8"]+ordinary+["drivers/a52_pil/subsystem_restart.o"],
+          "ordinary-objects.log",required=False)
+if first.returncode:
+    raise RuntimeError("Ordinary object stage failed, see ordinary-objects.log")
+ipa=cmd(flags+["-j8","drivers/platform/msm/ipa/"],
+        "IPA-directory-build.log",required=False)
+ipa_objects=[
+    out/"drivers/platform/msm/ipa/ipa_v3/ipa.o",
+    out/"drivers/platform/msm/ipa/ipa_v3/rmnet_ipa.o",
+    out/"drivers/platform/msm/ipa/ipa_v3/ipa_qmi_service.o",
+]
+if ipa.returncode or not all(x.exists() for x in ipa_objects):
+    print("IPA directory target not sufficient; falling back to normal Kbuild Image+vmlinux",flush=True)
+    compilation=cmd(flags+["-j8","Image","vmlinux"],
+                    "full-kernel-build-fallback.log",required=False)
+else:
+    compilation=ipa
+
 print("Target object make status:",compilation.returncode,flush=True)
 rows=[]
 failures=[]
