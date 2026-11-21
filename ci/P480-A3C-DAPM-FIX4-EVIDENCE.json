@@ -1,0 +1,60 @@
+{
+  "schema": "P480-A3C-DAPM-FIX4-v1",
+  "prior_hardware_commit": "26a6d4f4d9116f4015d0fbfda1f8661b66f86c47",
+  "reported_prior": {
+    "card_rc": -22,
+    "route_count_kept": 19,
+    "route_count_skipped": 8,
+    "rx_init_rc": 0,
+    "port_map": "sm_port_map",
+    "missing_widgets": 0,
+    "invalid_supply_direction_pairs": 5
+  },
+  "fix": {
+    "ordered_sink_source_exclusions": [
+      [
+        "MIC BIAS1",
+        "Analog Mic1"
+      ],
+      [
+        "MIC BIAS2",
+        "Analog Mic2"
+      ],
+      [
+        "MIC BIAS3",
+        "Analog Mic3"
+      ],
+      [
+        "MIC BIAS3",
+        "Analog Mic4"
+      ],
+      [
+        "MIC BIAS4",
+        "Analog Mic5"
+      ]
+    ],
+    "reason": "SUPPLY_SINK_FROM_NON_SUPPLY",
+    "previous_ADC_exclusions_preserved": 8,
+    "expected_retained": 14,
+    "expected_skipped": 13,
+    "disable_route_checks": false,
+    "widget_changes": false,
+    "core_register_diagnostic": "actual snd_card_register() rc, CONFIG_P480_A3C and lito Kona scoped",
+    "a3a_nonfatal_unchanged": true
+  },
+  "route_matrix": "ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv",
+  "runtime_manifest": "new hardware boot required after review; not yet observed",
+  "variant": "A3C_ONLY",
+  "image": "MANGROVE-P480-A3C-HLT.boot.img",
+  "existing_fallback": {
+    "artifact_id": 14672521007,
+    "run_id": 44809264636,
+    "rebuild": false
+  },
+  "dtb_sha256": "1c5a9a3ec9e9391bedb4716996dc57e1a9c982e44f8c1c1196773fdbb364ec28",
+  "ramdisk_sha256": "54f7891881a755536e908acd66fa2cf48bb24ed5f9f8d2fc4b0bf259f395a4c1",
+  "nohlt_allowed": false,
+  "hardware_validated": false,
+  "flash_authorized": false,
+  "claude_review_required": true
+}
