@@ -264,3 +264,11 @@ config P472_A3B_B3
     bool "P472 A3b B3 SoundWire masters/slaves and WCD938x MBHC"
     depends on P472_A3B_B2
     default n
+
+config P480_A3C
+    bool "P480 native Q6 PCM/compress/DAI and A52 Kona WCD938x card"
+    depends on P472_A3B_B3 && P472_A3A_Q6 && SND_SOC
+    default n
+    help
+      A3c only. Build pinned 5.4/5.10 ASoC providers and real Kona.
+      No WSA, TAS256x or voice. Does not change P479 charging/H0.

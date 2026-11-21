@@ -2,16 +2,32 @@ name: Mangrove direct-source Linux 5.10 build (NO FLASH)
 on:
   push:
     branches: [main, 'feature/**', 'p480/**']
-  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '.github/workflows/**'
   workflow_dispatch:
+    inputs:
+      p480_twins:
+        description: 'P480 A3C and NO-A3C with exact P479 HLT boot, NO FLASH'
+        type: boolean
+        default: false
+      p480_compare:
+        description: 'Claude symbol-size comparison: pure P479, 55babd9, P480 NO-A3C, P480 A3C (NO FLASH)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: mangrove-native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compile:
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')))) }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 210
     steps:
       - name: Checkout exactly the triggering source commit
         uses: actions/checkout@v4
@@ -87,6 +103,29 @@ jobs:
           make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
             drivers/a52_pil/subsys-pil-tz.o
+      - name: Fail-fast native A3c compile when P480 is enabled
+        run: |
+          set -Eeuo pipefail
+          if grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config; then
+            test -s drivers/soc/qcom/p472_tg_audio/a3c/kona.c
+            # Compile real ASM/ADM/AFE services first: donor API differences
+            # must fail at compile time, not surface as a late vmlinux error.
+            for source in q6asm q6adm q6afe; do
+              echo "P480 real DSP service compile probe: $source"
+              make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+                CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+                "drivers/soc/qcom/p472_tg_audio/dsp/$source.o"
+            done
+            for source in kona msm-pcm-q6-v2 msm-compress-q6-v2 msm-dai-q6-v2; do
+              echo "P480 native A3c compile probe: $source"
+              make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+                CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+                "drivers/soc/qcom/p472_tg_audio/a3c/$source.o"
+            done
+          else
+            test ! -e drivers/soc/qcom/p472_tg_audio/a3c || \
+              echo 'A3c source present but disabled in pinned P479-compatible config'
+          fi
       - name: Build checked-out source, no source patching
         env:
           LOCALVERSION: ''
@@ -121,3 +160,326 @@ jobs:
           grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' out/System.map
           echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
+  dual:
+    env:
+      LOCALVERSION: ''  # Match original P479 module vermagic; no auto '+'
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]'))) }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Gate immutable P479 boot provenance and direct-source branch
+        run: |
+          set -Eeuo pipefail
+          git merge-base --is-ancestor "$(git rev-list -n1 p479-baseline)" HEAD
+          git merge-base --is-ancestor 55babd9c651375580b3c5c10d7f37ac6213e005c HEAD
+          if [ "${{ inputs.p480_twins }}" = true ] && [ "${{ inputs.p480_compare }}" = true ]; then
+            echo "::error::Choose P480 twin boot images OR source comparison, not both."
+            exit 1
+          fi
+          grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config
+          grep -Fxq 'CONFIG_P479_H4=y' ci/build.config
+          test ! -e KernelSU/.git
+          python3 -m py_compile ci/p480_p479_boot_repack.py
+          python3 ci/p480_a3c_source_audit.py --root .
+      - name: Compile both P480 variants and the 55babd9 P479 control
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          for variant in A3C NO-A3C; do
+            mkdir -p "out_$variant" "package/$variant"
+            cp ci/build.config "out_$variant/.config"
+            if [ "$variant" = NO-A3C ]; then
+              sed -i 's/^CONFIG_P480_A3C=y$/# CONFIG_P480_A3C is not set/' "out_$variant/.config"
+            fi
+            cp "out_$variant/.config" "package/$variant/expected.config"
+            make O="$PWD/out_$variant" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+            cmp "out_$variant/.config" "package/$variant/expected.config"
+            make O="$PWD/out_$variant" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+            grep -aFq 'P479 H4 CABLE type=' "out_$variant/arch/arm64/boot/Image"
+            grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' "out_$variant/System.map"
+            if [ "$variant" = A3C ]; then
+              grep -aFq 'P480 A3c CARD register rc=' "out_$variant/arch/arm64/boot/Image"
+              grep -aFq 'P480 A3c LINK_SKIPPED name=' "out_$variant/arch/arm64/boot/Image"
+            else
+              ! grep -aFq 'P480 A3c CARD register rc=' "out_$variant/arch/arm64/boot/Image"
+            fi
+            cp "out_$variant/.config" "package/$variant/.config"
+            cp "out_$variant/System.map" "package/$variant/System.map"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('package/A3C/.config').read_text()
+          b=Path('package/NO-A3C/.config').read_text()
+          assert a.count('CONFIG_P480_A3C=y\n')==1
+          assert b==a.replace('CONFIG_P480_A3C=y\n','# CONFIG_P480_A3C is not set\n')
+          PY
+          # P479-compatible control is the build-tested 55bab repair commit,
+          # NOT the immutable original P479 tag. Disclose this distinction.
+          git worktree add --detach "$RUNNER_TEMP/p479-control" 55babd9c651375580b3c5c10d7f37ac6213e005c
+          base="$RUNNER_TEMP/p479-control"
+          mkdir -p out_CONTROL package/CONTROL
+          cp "$base/ci/build.config" out_CONTROL/.config
+          make -C "$base" O="$PWD/out_CONTROL" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          cmp "$base/ci/build.config" out_CONTROL/.config
+          make -C "$base" O="$PWD/out_CONTROL" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          grep -aFq 'P479 H4 CABLE type=' out_CONTROL/arch/arm64/boot/Image
+          cp out_CONTROL/System.map package/CONTROL/System.map
+          cp out_CONTROL/.config package/CONTROL/.config
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          original=Path('ci/P479.config').read_text()
+          current=Path('package/CONTROL/.config').read_text()
+          j={
+              'source':'55babd9c651375580b3c5c10d7f37ac6213e005c',
+              'source_is_original_p479_baseline':False,
+              'known_PIL_SSR_header_repair_included':True,
+              'control_config_matches_original_P479':current==original,
+              'control_config_sha256':sha('package/CONTROL/.config'),
+              'control_System_map_sha256':sha('package/CONTROL/System.map'),
+              'control_System_map_matches_original':
+                sha('package/CONTROL/System.map')=='26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e',
+              'control_Image_sha256':sha('out_CONTROL/arch/arm64/boot/Image'),
+              'claim_only_buildstamp_changes':False,
+              'flash_authorized':False,
+          }
+          Path('package/CONTROL/P479-source-control.json').write_text(json.dumps(j,indent=2,sort_keys=True)+'\n')
+          print('P479 control built; difference from original P479 source disclosed',j)
+      - name: Build pristine P479 and compare all four vmlinux symbol tables (NO FLASH)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]')) }}
+        run: |
+          set -Eeuo pipefail
+          bash -n ci/p480_symbol_comparison.sh
+          bash ci/p480_symbol_comparison.sh
+      - name: Upload all three full bloat-o-meter reports and complete config diffs
+        if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P479-P480-FOUR-SOURCE-SYMBOL-EVIDENCE-${{ github.sha }}
+          path: package/symbol-review/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Download ONLY authenticated final P479 HLT boot reference
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p package/archive package/input package/audit
+          gh release download p479-equivalence-reference \
+            --repo GiulianoB-1/A526B-Mangrove-Kernel \
+            --pattern p479-reference-14131467025.zip --dir package/archive
+          printf '%s  %s\n' \
+            44412b170b639ebbbf6615e4a302ec8e4a83e09a934e32da49bbc1c801755230 \
+            package/archive/p479-reference-14131467025.zip | sha256sum -c -
+          python3 - <<'PY'
+          import gzip,hashlib,json,zipfile
+          from pathlib import Path
+          from ci.p480_boot_repack import parse_boot
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          with zipfile.ZipFile('package/archive/p479-reference-14131467025.zip') as z:
+              assert z.namelist().count(m['archive_inner_path'])==1
+              boot=z.read(m['archive_inner_path'])
+          assert hashlib.sha256(boot).hexdigest()==m['original_boot_sha256']
+          assert len(boot)==m['original_boot_size']
+          p=parse_boot(boot)
+          assert hashlib.sha256(p['dtb']).hexdigest()==m['original_boot_dtb_sha256']
+          assert hashlib.sha256(p['ramdisk']).hexdigest()==m['original_ramdisk_sha256']
+          assert hashlib.sha256(gzip.decompress(p['kernel'])).hexdigest()==m['original_uncompressed_kernel_sha256']
+          assert p['cmdline']==m['cmdline']
+          assert 'nohlt' not in p['cmdline'].split()
+          assert Path('ci/P479-boot-dtb.sha256').read_text().split()[0]==m['original_boot_dtb_sha256']
+          Path('package/input/P479-HLT.boot.img').write_bytes(boot)
+          Path('package/audit/P479-template-verified.json').write_text(json.dumps({
+              'P479_boot_sha256':m['original_boot_sha256'],
+              'P479_DTB_sha256':m['original_boot_dtb_sha256'],
+              'P479_ramdisk_sha256':m['original_ramdisk_sha256'],
+              'P479_cmdline':m['cmdline'],
+              'source_release':m['source_release_url'],
+              'flash_authorized':False},indent=2,sort_keys=True)+'\n')
+          print('Exact final P479 HLT source boot and DTB PIN VERIFIED, nohlt absent')
+          PY
+      - name: Gate exact original P479 vmlinux strings and rebuilt P480 module vermagic (NO FLASH)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        run: |
+          set -Eeuo pipefail
+          unzip -p package/archive/p479-reference-14131467025.zip phase447b-variants/P471-D1-DATARMNET-CANDIDATE.vmlinux > package/input/original-P479.vmlinux
+          python3 - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          def capture(path):
+              result={'vermagic':set(),'dynamic_debug_paths':set()}
+              with subprocess.Popen(['strings','-a',str(path)],stdout=subprocess.PIPE,text=True,errors='replace') as p:
+                  for line in p.stdout:
+                      line=line.strip()
+                      if 'SMP preempt' in line and 'modversions' in line and 'aarch64' in line:
+                          result['vermagic'].add(line)
+                      if 'lib/dynamic_debug.c' in line:
+                          result['dynamic_debug_paths'].add(line)
+                  assert p.wait()==0,path
+              return {k:sorted(v) for k,v in result.items()}
+          expected='5.10.252-Mangrove SMP preempt mod_unload modversions aarch64'
+          old=Path('package/input/original-P479.vmlinux')
+          records={'P479-original':capture(old)}
+          for variant in ('CONTROL','NO-A3C','A3C'):
+              records[variant]=capture(Path('out_'+variant)/'vmlinux')
+          assert all(v['vermagic']==[expected] for v in records.values()),records
+          assert '../../gki/common/lib/dynamic_debug.c' in records['P479-original']['dynamic_debug_paths']
+          assert all('lib/dynamic_debug.c' in records[k]['dynamic_debug_paths'] for k in ('CONTROL','NO-A3C','A3C'))
+          evidence={'original_P479_and_rebuilt_3_variants':records,
+                    'original_reference_ELF_member':'phase447b-variants/P471-D1-DATARMNET-CANDIDATE.vmlinux',
+                    'all_vermagic_exact_original_P479':True,
+                    'runtime_loaded_vendor_ko_inventory':'NOT_AVAILABLE_IN_CI',
+                    'flash_authorized':False}
+          Path('package/audit/P480-vermagic-gate.json').write_text(json.dumps(evidence,indent=2)+'\n')
+          print('Original and new vmlinux exact vermagic PASS; embedded build path difference confirmed')
+          for name,info in records.items():
+              print(name,info)
+          PY
+          rm package/input/original-P479.vmlinux
+      - name: Repack P479 control and both P480 builds, with zero DTB changes
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        run: |
+          set -Eeuo pipefail
+          for variant in CONTROL A3C NO-A3C; do
+            image="out_$variant/arch/arm64/boot/Image"
+            gzip -n -c "$image" > "package/input/$variant.gz"
+            if [ "$variant" = CONTROL ]; then
+              python3 ci/p480_p479_boot_repack.py \
+                --source package/input/P479-HLT.boot.img \
+                --kernel "package/input/$variant.gz" --native-image "$image" \
+                --variant "P479-control-55babd9" --control \
+                --output package/input/P479-CONTROL-REPACK-NO-FLASH.img \
+                --report package/CONTROL/P479-control-repack.json
+            else
+              python3 ci/p480_p479_boot_repack.py \
+                --source package/input/P479-HLT.boot.img \
+                --kernel "package/input/$variant.gz" --native-image "$image" \
+                --variant "$variant" \
+                --output "package/$variant/P480-$variant-HLT-P479-TEMPLATE-DO-NOT-FLASH.img" \
+                --report "package/$variant/P480-$variant-repack.json"
+            fi
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          comparisons={}
+          for variant in ('CONTROL','A3C','NO-A3C'):
+              p=Path('package')/variant
+              report=p/('P479-control-repack.json' if variant=='CONTROL' else f'P480-{variant}-repack.json')
+              j=json.loads(report.read_text())
+              assert all(j['invariants'].values())
+              assert j['flash_authorized'] is False
+              assert j['original_P479_boot_sha256']==m['original_boot_sha256']
+              assert j['original_P479_DTB_sha256']==j['repacked_DTB_sha256']==m['original_boot_dtb_sha256']
+              assert j['original_P479_ramdisk_sha256']==j['repacked_ramdisk_sha256']==m['original_ramdisk_sha256']
+              assert j['original_P479_cmdline']==j['repacked_cmdline']==m['cmdline']
+              comparisons[variant]={'boot_sha256':j['repacked_boot_sha256'],'image_sha256':j['rebuilt_Image_sha256']}
+          assert comparisons['A3C']['boot_sha256']!=comparisons['NO-A3C']['boot_sha256']
+          (Path('package/audit')/'P479-P480-control-and-twins.json').write_text(json.dumps({
+              'result':'P479_BOOT_TEMPLATE_PRESERVED',
+              'build_commit':'${{ github.sha }}',
+              'A3C_only_config_difference':True,
+              'P479_boot_sha256':m['original_boot_sha256'],
+              'P479_final_DTB_sha256':m['original_boot_dtb_sha256'],
+              'P479_cmdline':m['cmdline'],
+              'variants':comparisons,
+              'source_control_is_55bab_repair_not_original_P479':True,
+              'kernel_differences_only_build_stamps_proven':False,
+              'hardware_audio_verified':False,'flash_authorized':False
+          },indent=2,sort_keys=True)+'\n')
+          print('P479 control and P480 A3C twin: only kernel and header ID/size may change')
+          PY
+          for variant in A3C NO-A3C; do
+            cp ci/P480-test-notes.md "package/$variant/"
+            printf '%s\n' 'P479 FINAL HLT BOOT TEMPLATE, DTB AND RAMDISK UNCHANGED. NO FLASH UNTIL CLAUDE REVIEWS.' \
+              > "package/$variant/README-DO-NOT-FLASH.txt"
+            (cd "package/$variant" && sha256sum \
+              "P480-$variant-HLT-P479-TEMPLATE-DO-NOT-FLASH.img" \
+              "P480-$variant-repack.json" .config System.map > SHA256SUMS &&
+              sha256sum -c SHA256SUMS)
+          done
+          echo 'P480 twins on P479 final HLT boot; P479 control reported, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+          rm -rf package/archive package/input
+      - name: Save P479 control and template provenance audits
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-P479-BOOT-CONTROL-${{ github.sha }}
+          path: |
+            package/CONTROL/
+            package/audit/
+            ci/P479-boot-provenance.json
+            ci/P479-boot-dtb.sha256
+            ci/P480-test-notes.md
+          if-no-files-found: error
+          retention-days: 90
+      - name: Save P480-A3C image for review only
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
+          path: package/A3C/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Save P480-NO-A3C image for review only
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-NO-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
+          path: package/NO-A3C/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+  original-reference-audit:
+    name: Original P479 ELF and header provenance (NO FLASH)
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]')) }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout pinned direct-source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install native toolchain and DWARF type probe
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu dwarves
+      - name: Compare authenticated original P479 ELF and duplicate header users
+        run: |
+          set -Eeuo pipefail
+          if echo "${{ github.event.head_commit.message }}" | grep -Fq '[P480-ABI]'; then
+            python3 -m py_compile ci/p480_restart_header_probe.py
+            python3 ci/p480_restart_header_probe.py
+          else
+            python3 -m py_compile ci/p479_reference_header_audit.py
+            python3 ci/p479_reference_header_audit.py
+          fi
+      - name: Upload complete reference and Kbuild evidence (NO FLASH)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P479-ELF-HEADER-SYMBOL-REVIEW-${{ github.sha }}
+          path: |
+            p479-reference-audit/
+            p480-abi-gate-evidence/
+          if-no-files-found: warn
+          retention-days: 90

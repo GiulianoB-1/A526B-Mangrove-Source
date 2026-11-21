@@ -23,6 +23,9 @@
 #include <ipc/apr_tal.h>
 #include "adsp_err.h"
 #include "q6afecal-hwdep.h"
+#ifdef CONFIG_P480_A3C
+#include "p480_a3c_dsp_abi.h"
+#endif
 #if defined(CONFIG_SND_SOC_TFA9878)
 static int afe_port_id_tfa9878_i2s_rx;
 #endif /* CONFIG_SND_SOC_TFA9878 */
@@ -12215,3 +12218,512 @@ void afe_set_lsm_afe_port_id(int idx, int lsm_port)
 	this_afe.lsm_afe_ports[idx] = lsm_port;
 }
 EXPORT_SYMBOL(afe_set_lsm_afe_port_id);
+
+#ifdef CONFIG_P480_A3C
+/* P480 native AFE5.4 API services, using real existing A3a APR transport.
+ * Donor: Samsung SM7325 c4cb0a9783fcfb8d17ddda02c0ad1678dcd0dac4.
+ */
+int afe_q6_update_dyn_bitrate(uint32_t bitrate)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId =0;
+
+	struct asm_bitrate_param_t dyn_bitrate;
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("%s: bitrate[%u] \n", __func__, bitrate);
+
+	index = q6audio_get_port_index(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	portId = q6audio_get_port_id(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&dyn_bitrate, 0, sizeof(dyn_bitrate));
+	dyn_bitrate.enc_bitrate = bitrate;
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_ENCODER_PARAM_ID_ENC_BITRATE;
+	param_hdr.param_size = sizeof(struct asm_bitrate_param_t/*asm_dyn_bitpool_cfg_v2*/);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) &dyn_bitrate;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data, &packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+
+	ret = q6afe_set_params(portId, index, NULL, packed_param_data, packed_data_size);
+	if (ret ) {
+		pr_err("%s: Comamnd %d failed %d\n",
+				__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_update_dyn_bitrate);
+
+int afe_q6_update_sbm(struct asm_sbm_param_t *sbm_param)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId = 0;
+
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("afe_q6_update : updating mode");
+
+	index = q6audio_get_port_index(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	portId = q6audio_get_port_id(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_MEDIA_ID_SBM_ID;
+	param_hdr.param_size = sizeof(struct asm_sbm_param_t);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) sbm_param;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data, &packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+
+	ret = q6afe_set_params(portId, index, NULL, packed_param_data, packed_data_size);
+	if (ret) {
+		pr_err("%s: Comamnd %d failed %d\n",
+				__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_update_sbm);
+
+int afe_q6_slimbus_update_sbm(struct asm_sbm_param_t *sbm_param)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId = 0;
+
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("afe_q6_update : updating mode");
+
+	index = q6audio_get_port_index(SLIMBUS_7_RX);
+	portId = q6audio_get_port_id(SLIMBUS_7_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_MEDIA_ID_SBM_ID;
+	param_hdr.param_size = sizeof(struct asm_sbm_param_t);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) sbm_param;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data, &packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+
+	ret = q6afe_set_params(portId, index, NULL, packed_param_data, packed_data_size);
+	if (ret) {
+		pr_err("%s: Comamnd %d failed %d\n",
+				__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_slimbus_update_sbm);
+
+int afe_q6_update_mtu(int mtu)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId =0;
+
+	struct asm_mtu_param_t mtu_param;
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("%s: mtu[%d]\n", __func__, mtu);
+
+	index = q6audio_get_port_index(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	portId = q6audio_get_port_id(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&mtu_param, 0, sizeof(mtu_param));
+	mtu_param.mtu = mtu;
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_PARAM_ID_PEER_MTU_ID;
+	param_hdr.param_size = sizeof(struct asm_mtu_param_t);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) &mtu_param;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data,
+			&packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+
+	ret = q6afe_set_params(portId, index,
+			NULL, packed_param_data, packed_data_size);
+	if (ret ) {
+		pr_err("%s: Comamnd %d failed %d\n",
+				__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_update_mtu);
+
+int afe_q6_update_a2dp_suspend(int a2dp_suspend)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId =0;
+
+	struct asm_a2dp_suspend_param_t a2dp_suspend_param;
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("%s: a2dp_suspend[%d]\n", __func__, a2dp_suspend);
+
+	index = q6audio_get_port_index(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	portId = q6audio_get_port_id(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&a2dp_suspend_param, 0, sizeof(a2dp_suspend_param));
+	a2dp_suspend_param.a2dp_suspend = a2dp_suspend;
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_PARAM_ID_A2DP_SUSPEND_ID;
+	param_hdr.param_size = sizeof(struct asm_a2dp_suspend_param_t);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) &a2dp_suspend_param;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data,
+			&packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+
+	ret = q6afe_set_params(portId, index,
+			NULL, packed_param_data, packed_data_size);
+	if (ret ) {
+		pr_err("%s: Comamnd %d failed %d\n",
+			__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_update_a2dp_suspend);
+
+int afe_q6_update_enc_format(uint32_t enc_format)
+{
+	int ret = 0;
+	int index = 0;
+	u16 portId =0;
+
+	struct asm_enc_format_param_t enc_format_param;
+	struct param_hdr_v3 param_hdr;
+	u8 *packed_param_data = NULL;
+	int packed_data_size = 0;
+	u8 *param_data;
+
+	pr_info("%s: enc_format[%d]\n", __func__, enc_format);
+
+	index = q6audio_get_port_index(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	portId = q6audio_get_port_id(AFE_PORT_ID_SECONDARY_MI2S_RX);
+	if (index < 0 || index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+				__func__, index);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	memset(&enc_format_param, 0, sizeof(enc_format_param));
+	enc_format_param.enc_format = enc_format;
+
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = AFE_MODULE_ID_ENCODER;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AVS_PARAM_ID_ENC_FORMAT_ID;
+	param_hdr.param_size = sizeof(struct asm_enc_format_param_t);
+
+	packed_data_size = sizeof(union param_hdrs) + param_hdr.param_size;
+
+	packed_param_data = kzalloc(packed_data_size, GFP_KERNEL);
+	if (packed_param_data == NULL) {
+		pr_err("%s:\n packed_param_data return null", __func__);
+		return -ENOMEM;
+	}
+
+	param_data = (u8 *) &enc_format_param;
+	ret = q6common_pack_pp_params(packed_param_data, &param_hdr, param_data,
+			&packed_data_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
+		goto fail_cmd;
+	}
+	pr_info("%s: enc_format[portID 0x%x]\n", __func__, portId);
+	ret = q6afe_set_params(portId, index,
+			NULL, packed_param_data, packed_data_size);
+	if (ret ) {
+		pr_err("%s: Comamnd %d failed %d\n",
+				__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM, ret);
+		ret = -EINVAL;
+	}
+fail_cmd:
+	kfree(packed_param_data);
+	return ret;
+}
+EXPORT_SYMBOL(afe_q6_update_enc_format);
+
+int afe_send_cdc_dma_data_align(u16 port_id, u32 cdc_dma_data_align)
+{
+	struct afe_param_id_cdc_dma_data_align data_align;
+	struct param_hdr_v3 param_info;
+	uint16_t port_index = 0;
+	int ret = -EINVAL;
+
+	memset(&data_align, 0, sizeof(data_align));
+	memset(&param_info, 0, sizeof(param_info));
+
+	port_index = afe_get_port_index(port_id);
+	if (port_index < 0 || port_index >= AFE_MAX_PORTS) {
+		pr_err("%s: AFE port index[%d] invalid!\n",
+			__func__, port_index);
+		return -EINVAL;
+	}
+	data_align.cdc_dma_data_align =
+			cdc_dma_data_align;
+
+	pr_debug("%s: port_id %x, data_align %d\n", __func__,
+			port_id, data_align.cdc_dma_data_align);
+	param_info.module_id = AFE_MODULE_AUDIO_DEV_INTERFACE;
+	param_info.instance_id = INSTANCE_ID_0;
+	param_info.param_id = AFE_PARAM_ID_CODEC_DMA_DATA_ALIGN;
+	param_info.param_size = sizeof(data_align);
+
+	ret = q6afe_pack_and_set_param_in_band(port_id,
+					       q6audio_get_port_index(port_id),
+					       param_info, (u8 *) &data_align);
+	if (ret)
+		pr_err("%s: AFE cdc cdc data alignment for port 0x%x failed %d\n",
+		       __func__, port_id, ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(afe_send_cdc_dma_data_align);
+
+int afe_set_lc3_channel_mode(u32 format, u16 port_id, u32 channel_mode)
+{
+	struct lc3_channel_mode_param_t channel_mode_param;
+	struct param_hdr_v3 param_info;
+	int ret = 0;
+	u32 param_id = 0;
+
+	if (format == ASM_MEDIA_FMT_LC3) {
+		param_id = CAPI_V2_PARAM_SET_LC3_ENC_DOWNMIX_2_MONO;
+	} else {
+		pr_err("%s: Not supported format 0x%x\n", __func__, format);
+		return -EINVAL;
+	}
+
+	memset(&param_info, 0, sizeof(param_info));
+	memset(&channel_mode_param, 0, sizeof(channel_mode_param));
+
+	param_info.module_id = AFE_MODULE_ID_ENCODER;
+	param_info.instance_id = INSTANCE_ID_0;
+	param_info.param_id = param_id;
+	param_info.param_size = sizeof(channel_mode_param);
+
+	channel_mode_param.channel_mode = channel_mode;
+
+	ret = q6afe_pack_and_set_param_in_band(port_id,
+			q6audio_get_port_index(port_id),
+						param_info,
+				(u8 *) &channel_mode_param);
+	if (ret)
+		pr_err("%s: AFE set channel mode cfg for port 0x%x failed %d\n",
+			 __func__, port_id, ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(afe_set_lc3_channel_mode);
+
+int afe_port_send_logging_cfg(u16 port_id,
+	struct afe_param_id_port_data_log_disable_t *log_disable)
+{
+	struct param_hdr_v3 param_hdr;
+	int ret = -EINVAL;
+
+	pr_debug("%s: enter, port: 0x%x logging flag: %x\n", __func__, port_id,
+		log_disable->disable_logging_flag);
+	memset(&param_hdr, 0, sizeof(param_hdr));
+
+	param_hdr.module_id = AFE_MODULE_AUDIO_DEV_INTERFACE;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = AFE_PARAM_ID_PORT_DATA_LOGGING_DISABLE;
+	param_hdr.param_size = sizeof(struct afe_param_id_port_data_log_disable_t);
+
+	ret = q6afe_pack_and_set_param_in_band(port_id,
+		q6audio_get_port_index(port_id), param_hdr, (u8*)log_disable);
+	if (ret)
+		pr_err("%s: AFE port logging setting for port 0x%x failed %d\n",
+			__func__, port_id, ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(afe_port_send_logging_cfg);
+
+/* The SM7325 5.4 engine also implements external MCLK source setup and
+ * nondefault power modes. The older A3a AFE clock/port engines do NOT.
+ * Reject those requests explicitly rather than returning fake success.
+ * Internal/default clocks and disabled power mode retain their real
+ * existing implementation. These gates are scoped to A3c only.
+ */
+int afe_set_mclk_src_cfg(u16 port_id, uint32_t mclk_src_id,
+			uint32_t mclk_freq)
+{
+	int idx = afe_get_port_idx(port_id);
+
+	if (idx < 0)
+		return idx;
+	if (mclk_src_id != 0 || mclk_freq != 0) {
+		pr_warn_ratelimited("P480 A3c external MCLK not ported, port=0x%x src=%u freq=%u\\n",
+			port_id, mclk_src_id, mclk_freq);
+		return -EOPNOTSUPP;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(afe_set_mclk_src_cfg);
+
+int afe_get_power_mode_cfg(u16 port_id, u32 *enable_flag)
+{
+	int idx = afe_get_port_index(port_id);
+
+	if (!enable_flag || idx < 0 || idx >= AFE_MAX_PORTS)
+		return -EINVAL;
+	/* Existing AFE service supports default mode only. */
+	*enable_flag = 0;
+	return 0;
+}
+EXPORT_SYMBOL(afe_get_power_mode_cfg);
+
+int afe_set_power_mode_cfg(u16 port_id, u32 enable_flag)
+{
+	int idx = afe_get_port_index(port_id);
+
+	if (idx < 0 || idx >= AFE_MAX_PORTS)
+		return -EINVAL;
+	if (enable_flag) {
+		pr_warn_ratelimited("P480 A3c nondefault AFE power mode unsupported, port=0x%x\\n", port_id);
+		return -EOPNOTSUPP;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(afe_set_power_mode_cfg);
+#endif /* CONFIG_P480_A3C */

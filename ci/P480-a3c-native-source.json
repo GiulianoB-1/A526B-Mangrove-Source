@@ -1,0 +1,473 @@
+{
+  "A3c_hardware_verified": false,
+  "AUX_component_registration_deferred_to_ASoC_core": true,
+  "SSR_down_fail_closed_until_reboot": true,
+  "SSR_reonline_supported": false,
+  "TG_link_groups": {
+    "ext_disp_be_dai_link": {
+      "count": 2,
+      "link_decl_names": [
+        "LPASS_BE_DISPLAY_PORT",
+        "LPASS_BE_DISPLAY_PORT1"
+      ]
+    },
+    "msm_afe_rxtx_lb_be_dai_link": {
+      "count": 1,
+      "link_decl_names": [
+        "LPASS_BE_AFE_LOOPBACK_TX"
+      ]
+    },
+    "msm_auxpcm_be_dai_links": {
+      "count": 12,
+      "link_decl_names": [
+        "LPASS_BE_AUXPCM_RX",
+        "LPASS_BE_AUXPCM_TX",
+        "LPASS_BE_SEC_AUXPCM_RX",
+        "LPASS_BE_SEC_AUXPCM_TX",
+        "LPASS_BE_TERT_AUXPCM_RX",
+        "LPASS_BE_TERT_AUXPCM_TX",
+        "LPASS_BE_QUAT_AUXPCM_RX",
+        "LPASS_BE_QUAT_AUXPCM_TX",
+        "LPASS_BE_QUIN_AUXPCM_RX",
+        "LPASS_BE_QUIN_AUXPCM_TX",
+        "LPASS_BE_SEN_AUXPCM_RX",
+        "LPASS_BE_SEN_AUXPCM_TX"
+      ]
+    },
+    "msm_bolero_fe_dai_links": {
+      "count": 1,
+      "link_decl_names": [
+        "LPASS_BE_WSA_CDC_DMA_TX_0"
+      ]
+    },
+    "msm_common_be_dai_links": {
+      "count": 10,
+      "link_decl_names": [
+        "LPASS_BE_AFE_PCM_RX",
+        "LPASS_BE_AFE_PCM_TX",
+        "LPASS_BE_INCALL_RECORD_TX",
+        "LPASS_BE_INCALL_RECORD_RX",
+        "LPASS_BE_VOICE_PLAYBACK_TX",
+        "LPASS_BE_VOICE2_PLAYBACK_TX",
+        "LPASS_BE_PROXY_TX",
+        "LPASS_BE_PROXY_RX",
+        "LPASS_BE_USB_AUDIO_RX",
+        "LPASS_BE_USB_AUDIO_TX"
+      ]
+    },
+    "msm_common_dai_links": {
+      "count": 34,
+      "link_decl_names": [
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "\"VoiceMMode1\"",
+        "\"MSM VoIP\"",
+        "MSM_DAILINK_NAME",
+        "\"MSM AFE-PCM RX\"",
+        "\"MSM AFE-PCM TX\"",
+        "MSM_DAILINK_NAME",
+        "\"AUXPCM Hostless\"",
+        "MSM_DAILINK_NAME",
+        "\"Listen 1 Audio Service\"",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "\"HDMI_RX_HOSTLESS\"",
+        "\"VoiceMMode2\"",
+        "\"Listen 2 Audio Service\"",
+        "\"Listen 3 Audio Service\"",
+        "\"Listen 4 Audio Service\"",
+        "\"Listen 5 Audio Service\"",
+        "\"Listen 6 Audio Service\"",
+        "\"Listen 7 Audio Service\"",
+        "\"Listen 8 Audio Service\"",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "MSM_DAILINK_NAME",
+        "\"CDC_DMA Hostless\"",
+        "\"TX3_CDC_DMA Hostless\"",
+        "\"Tertiary MI2S TX_Hostless\""
+      ]
+    },
+    "msm_common_misc_fe_dai_links": {
+      "count": 7,
+      "link_decl_names": [
+        "MSM_DAILINK_NAME",
+        "\"USB Audio Hostless\"",
+        "\"SLIMBUS_7 Hostless\"",
+        "\"Compress Capture\"",
+        "\"SLIMBUS_8 Hostless\"",
+        "LPASS_BE_TX_CDC_DMA_TX_5",
+        "\"ADAPTATION Hostless\""
+      ]
+    },
+    "msm_mi2s_be_dai_links": {
+      "count": 12,
+      "link_decl_names": [
+        "LPASS_BE_PRI_MI2S_RX",
+        "LPASS_BE_PRI_MI2S_TX",
+        "LPASS_BE_SEC_MI2S_RX",
+        "LPASS_BE_SEC_MI2S_TX",
+        "LPASS_BE_TERT_MI2S_RX",
+        "LPASS_BE_TERT_MI2S_TX",
+        "LPASS_BE_QUAT_MI2S_RX",
+        "LPASS_BE_QUAT_MI2S_TX",
+        "LPASS_BE_QUIN_MI2S_RX",
+        "LPASS_BE_QUIN_MI2S_TX",
+        "LPASS_BE_SENARY_MI2S_RX",
+        "LPASS_BE_SENARY_MI2S_TX"
+      ]
+    },
+    "msm_rx_tx_cdc_dma_be_dai_links": {
+      "count": 6,
+      "link_decl_names": [
+        "LPASS_BE_RX_CDC_DMA_RX_0",
+        "LPASS_BE_RX_CDC_DMA_RX_1",
+        "LPASS_BE_RX_CDC_DMA_RX_2",
+        "LPASS_BE_RX_CDC_DMA_RX_3",
+        "LPASS_BE_TX_CDC_DMA_TX_3",
+        "LPASS_BE_TX_CDC_DMA_TX_4"
+      ]
+    },
+    "msm_stub_be_dai_links": {
+      "count": 2,
+      "link_decl_names": [
+        "LPASS_BE_AUXPCM_RX",
+        "LPASS_BE_AUXPCM_TX"
+      ]
+    },
+    "msm_stub_fe_dai_links": {
+      "count": 1,
+      "link_decl_names": [
+        "\"MSMSTUB Media1\""
+      ]
+    },
+    "msm_tdm_be_dai_links": {
+      "count": 12,
+      "link_decl_names": [
+        "LPASS_BE_PRI_TDM_RX_0",
+        "LPASS_BE_PRI_TDM_TX_0",
+        "LPASS_BE_SEC_TDM_RX_0",
+        "LPASS_BE_SEC_TDM_TX_0",
+        "LPASS_BE_TERT_TDM_RX_0",
+        "LPASS_BE_TERT_TDM_TX_0",
+        "LPASS_BE_QUAT_TDM_RX_0",
+        "LPASS_BE_QUAT_TDM_TX_0",
+        "LPASS_BE_QUIN_TDM_RX_0",
+        "LPASS_BE_QUIN_TDM_TX_0",
+        "LPASS_BE_SEN_TDM_RX_0",
+        "LPASS_BE_SEN_TDM_TX_0"
+      ]
+    },
+    "msm_va_cdc_dma_be_dai_links": {
+      "count": 3,
+      "link_decl_names": [
+        "LPASS_BE_VA_CDC_DMA_TX_0",
+        "LPASS_BE_VA_CDC_DMA_TX_1",
+        "LPASS_BE_VA_CDC_DMA_TX_2"
+      ]
+    },
+    "msm_wcn_be_dai_links": {
+      "count": 2,
+      "link_decl_names": [
+        "LPASS_BE_SLIMBUS_7_RX",
+        "LPASS_BE_SLIMBUS_7_TX"
+      ]
+    },
+    "msm_wcn_btfm_be_dai_links": {
+      "count": 3,
+      "link_decl_names": [
+        "LPASS_BE_SLIMBUS_7_RX",
+        "LPASS_BE_SLIMBUS_7_TX",
+        "LPASS_BE_SLIMBUS_8_TX"
+      ]
+    },
+    "msm_wsa_cdc_dma_be_dai_links": {
+      "count": 3,
+      "link_decl_names": [
+        "LPASS_BE_WSA_CDC_DMA_RX_0",
+        "LPASS_BE_WSA_CDC_DMA_RX_1",
+        "LPASS_BE_WSA_CDC_DMA_TX_1"
+      ]
+    }
+  },
+  "async_dpcm_5_4_extension_disabled_for_5_10": true,
+  "card": "lito-lagoonmtp-snd-card",
+  "dynamic_be_QGKI_hint_unsupported_in_5_10": 5,
+  "explicitly_unported": [
+    "TAS256x",
+    "WSA amp/macro",
+    "WCD937x",
+    "voice/CVD",
+    "Bluetooth/FM",
+    "USB/display",
+    "LSM/Listen"
+  ],
+  "fallback_unchanged_when_CONFIG_P480_A3C_n": true,
+  "hostless_dpcm_5_4_core_semantics_ported": false,
+  "low_latency_qos_affinity_5_10_difference": "5.10 CPU latency QoS has no donor core-1/2 affinity",
+  "machine_source": "Samsung SM7325 5.4 Kona adapted with pinned TG r02 contract",
+  "no_EFS_ACDB_TAS_writes_added": true,
+  "no_TAS256x": true,
+  "no_host_links_fail_closed": 21,
+  "no_voice_init": true,
+  "not_hardware_verified": true,
+  "p480_native_link_verified": false,
+  "r02_platform_names": [
+    "msm-compr-dsp",
+    "msm-compress-dsp",
+    "msm-lsm-client",
+    "msm-pcm-afe",
+    "msm-pcm-dsp-noirq",
+    "msm-pcm-dsp.0",
+    "msm-pcm-dsp.1",
+    "msm-pcm-dsp.2",
+    "msm-pcm-hostless",
+    "msm-pcm-loopback",
+    "msm-pcm-routing",
+    "msm-pcm-voice",
+    "msm-voip-dsp",
+    "q6audio-adaptation"
+  ],
+  "real_provider_probe_wrappers": {
+    "codecs/msm_stub.c": [
+      "MSM_STUB_DRIVER"
+    ],
+    "msm-compress-q6-v2.c": [
+      "MSM_COMPR_DRIVER"
+    ],
+    "msm-dai-fe.c": [
+      "MSM_FE_DAI_DRIVER"
+    ],
+    "msm-dai-q6-v2.c": [
+      "MSM_AUXPCM_DEV_DRIVER",
+      "MSM_DAI_Q6_DEV",
+      "MSM_DAI_Q6",
+      "MSM_DAI_MI2S_Q6",
+      "MSM_DAI_Q6_MI2S_DRIVER",
+      "MSM_DAI_Q6_META_MI2S_DRIVER",
+      "MSM_DAI_Q6_SPDIF_DRIVER",
+      "MSM_DAI_TDM_Q6",
+      "MSM_DAI_Q6_TDM_DRIVER",
+      "MSM_DAI_Q6_CDC_DMA_DRIVER",
+      "MSM_DAI_CDC_DMA_Q6"
+    ],
+    "msm-dai-stub-v2.c": [
+      "MSM_DAI_STUB_DEV",
+      "MSM_DAI_STUB_DRIVER"
+    ],
+    "msm-pcm-afe-v2.c": [
+      "MSM_AFE_DRIVER"
+    ],
+    "msm-pcm-hostless.c": [
+      "MSM_PCM_HOSTLESS_DRIVER"
+    ],
+    "msm-pcm-q6-noirq.c": [
+      "MSM_PCM_DRIVER_NOIRQ"
+    ],
+    "msm-pcm-q6-v2.c": [
+      "MSM_PCM_DRIVER"
+    ],
+    "msm-pcm-routing-v2.c": [
+      "MSM_ROUTING_PCM_DRIVER"
+    ]
+  },
+  "real_provider_sources": [
+    "msm-pcm-q6-v2.c",
+    "msm-compress-q6-v2.c",
+    "msm-pcm-hostless.c",
+    "msm-pcm-afe-v2.c",
+    "msm-pcm-q6-noirq.c",
+    "msm-pcm-routing-v2.c",
+    "msm-pcm-routing-devdep.c",
+    "msm-dai-q6-v2.c",
+    "msm-dai-fe.c",
+    "msm-dai-stub-v2.c",
+    "msm-audio-effects-q6-v2.c",
+    "msm-qti-pp-config.c",
+    "platform_init.c",
+    "codecs/msm_stub.c"
+  ],
+  "selected_link_count": 29,
+  "selected_link_ids": [
+    {
+      "id": "multimedia1",
+      "platforms": [
+        "msm-pcm-dsp.0"
+      ]
+    },
+    {
+      "id": "multimedia2",
+      "platforms": [
+        "msm-pcm-dsp.0"
+      ]
+    },
+    {
+      "id": "multimedia3",
+      "platforms": [
+        "msm-pcm-dsp.2"
+      ]
+    },
+    {
+      "id": "multimedia4",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia5",
+      "platforms": [
+        "msm-pcm-dsp.1"
+      ]
+    },
+    {
+      "id": "multimedia7",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia8",
+      "platforms": [
+        "msm-pcm-dsp-noirq"
+      ]
+    },
+    {
+      "id": "multimedia9",
+      "platforms": [
+        "msm-pcm-dsp.0"
+      ]
+    },
+    {
+      "id": "multimedia10",
+      "platforms": [
+        "msm-pcm-dsp.1"
+      ]
+    },
+    {
+      "id": "multimedia11",
+      "platforms": [
+        "msm-pcm-dsp.0"
+      ]
+    },
+    {
+      "id": "multimedia12",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia13",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia14",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia15",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "multimedia16",
+      "platforms": [
+        "msm-pcm-dsp-noirq"
+      ]
+    },
+    {
+      "id": "multimedia17",
+      "platforms": [
+        "msm-compress-dsp"
+      ]
+    },
+    {
+      "id": "afepcm_rx",
+      "platforms": [
+        "msm-pcm-afe"
+      ]
+    },
+    {
+      "id": "afepcm_tx",
+      "platforms": [
+        "msm-pcm-afe"
+      ]
+    },
+    {
+      "id": "cdcdma_hostless",
+      "platforms": [
+        "msm-pcm-hostless"
+      ]
+    },
+    {
+      "id": "tx3_cdcdma_hostless",
+      "platforms": [
+        "msm-pcm-hostless"
+      ]
+    },
+    {
+      "id": "rx_dma_rx0",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "rx_dma_rx1",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "rx_dma_rx2",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "rx_dma_rx3",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "tx_dma_tx3",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "tx_dma_tx4",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "va_dma_tx0",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "va_dma_tx1",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    },
+    {
+      "id": "va_dma_tx2",
+      "platforms": [
+        "msm-pcm-routing"
+      ]
+    }
+  ]
+}
