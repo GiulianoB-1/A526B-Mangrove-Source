@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   compile:
-    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]')))) }}
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || (contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]'))))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -161,6 +161,8 @@ jobs:
           echo 'Direct-source build PASS. Artifact is diagnostic only; NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           sha256sum out/.config out/arch/arm64/boot/Image out/System.map >> "$GITHUB_STEP_SUMMARY"
   dual:
+    env:
+      LOCALVERSION: ''  # Match original P479 module vermagic; no auto '+'
     if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
@@ -406,7 +408,7 @@ jobs:
           retention-days: 90
   original-reference-audit:
     name: Original P479 ELF and header provenance (NO FLASH)
-    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[P479-HEADERS]') }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]')) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     env:
@@ -426,13 +428,20 @@ jobs:
       - name: Compare authenticated original P479 ELF and duplicate header users
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile ci/p479_reference_header_audit.py
-          python3 ci/p479_reference_header_audit.py
+          if echo "${{ github.event.head_commit.message }}" | grep -Fq '[P480-ABI]'; then
+            python3 -m py_compile ci/p480_restart_header_probe.py
+            python3 ci/p480_restart_header_probe.py
+          else
+            python3 -m py_compile ci/p479_reference_header_audit.py
+            python3 ci/p479_reference_header_audit.py
+          fi
       - name: Upload complete reference and Kbuild evidence (NO FLASH)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: P479-ELF-HEADER-SYMBOL-REVIEW-${{ github.sha }}
-          path: p479-reference-audit/
+          path: |
+            p479-reference-audit/
+            p480-abi-gate-evidence/
           if-no-files-found: warn
           retention-days: 90
