@@ -7955,8 +7955,9 @@ keep:
 	return 0;
 }
 
-/* The shared lagoon DT includes split TX endpoints that the actual
- * WCD938x driver does not expose. Do not prune any other pair.
+/* The shared lagoon DT includes split TX endpoints that WCD938x
+ * does not expose, and five invalid mic-to-supply connections.
+ * Only the explicit incompatibilities below may be pruned.
  */
 static bool p480_legacy_adc_output(const char *name)
 {
@@ -7969,6 +7970,30 @@ static bool p480_legacy_adc_output(const char *name)
 		return false;
 	for (i = 0; i < ARRAY_SIZE(names); i++)
 		if (!strcmp(name, names[i]))
+			return true;
+	return false;
+}
+
+/* WCD938x MIC BIAS widgets are supplies, Analog Mic widgets are not.
+ * Match only the five directed r02 pairs rejected by 5.10 DAPM.
+ * Never remove AMIC <- MIC BIAS, other pairs, or the reverse direction.
+ */
+static bool p480_invalid_micbias_route(const struct snd_soc_dapm_route *route)
+{
+	static const char * const pairs[][2] = {
+		{"MIC BIAS1", "Analog Mic1"},
+		{"MIC BIAS2", "Analog Mic2"},
+		{"MIC BIAS3", "Analog Mic3"},
+		{"MIC BIAS3", "Analog Mic4"},
+		{"MIC BIAS4", "Analog Mic5"},
+	};
+	int i;
+
+	if (!route->sink || !route->source)
+		return false;
+	for (i = 0; i < ARRAY_SIZE(pairs); i++)
+		if (!strcmp(route->sink, pairs[i][0]) &&
+		    !strcmp(route->source, pairs[i][1]))
 			return true;
 	return false;
 }
@@ -8037,6 +8062,13 @@ static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
 		    p480_legacy_adc_output(route->source)) {
 			dev_info(card->dev,
 				 "P480 A3c ROUTE_SKIPPED sink=%s source=%s reason=WCD937X_ONLY_WIDGET\n",
+				 route->sink, route->source);
+			skipped++;
+			continue;
+		}
+		if (p480_invalid_micbias_route(route)) {
+			dev_info(card->dev,
+				 "P480 A3c ROUTE_SKIPPED sink=%s source=%s reason=SUPPLY_SINK_FROM_NON_SUPPLY\n",
 				 route->sink, route->source);
 			skipped++;
 			continue;
@@ -8238,8 +8270,13 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev,
 			 "P480 A3c ROUTES added=%d failed=0\n",
 			 card->num_of_dapm_routes);
-		dev_info(&pdev->dev, "P480 A3c CARD_NUMBER number=%d\n",
-			 card->snd_card->number);
+		/* Use the actual ALSA fields printed by /proc/asound/cards,
+		 * not an assumed ID derived from the DT card model.
+		 */
+		dev_info(&pdev->dev,
+			 "P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s\n",
+			 card->snd_card->number, card->snd_card->id,
+			 card->snd_card->shortname, card->snd_card->driver);
 		p480_log_real_device_counts(card);
 	}
 	if (ret == -EPROBE_DEFER) {
