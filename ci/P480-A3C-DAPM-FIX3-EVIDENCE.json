@@ -1,0 +1,53 @@
+{
+  "schema": "P480-A3C-DAPM-FIX3-v1",
+  "prior_hardware_commit": "5d7fbeb811e6b8d4c890272b764d37cebd9a4f2f",
+  "prior_report": {
+    "card_rc": -19,
+    "links": 48,
+    "skips": 42,
+    "trim": "KONA Compress1 capture",
+    "routing_read_errors": 0
+  },
+  "fix": {
+    "move_init_only_on_probe_copy": "WSA_CDC_DMA_RX_0 -> RX_CDC_DMA_RX_0",
+    "uses_real_bolero_external_symbols": true,
+    "per_card_init_guard": true,
+    "route_filter": {
+      "real_wcd938x_present": true,
+      "require_absence_of_wcd937x": true,
+      "exact_names": [
+        "ADC1_OUTPUT",
+        "ADC2_OUTPUT",
+        "ADC3_OUTPUT",
+        "ADC4_OUTPUT"
+      ],
+      "expected_kept": 19,
+      "expected_skipped": 8,
+      "disable_route_checks": false
+    },
+    "donor_wcd937x_widget_lines": {
+      "ADC1_OUTPUT": 2193,
+      "ADC2_OUTPUT": 2194,
+      "ADC3_OUTPUT": 2287,
+      "ADC4_OUTPUT": null
+    },
+    "wcd938x_WCD_TX_OUTPUT_line": 3410
+  },
+  "expected_lists": "ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv",
+  "runtime_manifest": "read-only collector after independently approved boot; not yet available",
+  "a3a_nonfatal_init": "unchanged from Fix 2",
+  "build": {
+    "variant": "A3C_ONLY",
+    "image": "MANGROVE-P480-A3C-HLT.boot.img",
+    "fallback_artifact_id": 14672521007,
+    "fallback_run_id": 44809264636,
+    "fallback_archive_sha256": "6b7e9b868d1dbd498ceb06f08900018397da8a09823ef79e126714f616f0053f",
+    "fallback_rebuild": false,
+    "expected_dtb_sha256": "1c5a9a3ec9e9391bedb4716996dc57e1a9c982e44f8c1c1196773fdbb364ec28",
+    "expected_ramdisk_sha256": "54f7891881a755536e908acd66fa2cf48bb24ed5f9f8d2fc4b0bf259f395a4c1",
+    "nohlt_allowed": false
+  },
+  "hardware_validated": false,
+  "flash_authorized": false,
+  "claude_review_required": true
+}
