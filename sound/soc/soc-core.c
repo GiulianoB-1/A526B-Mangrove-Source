@@ -1957,6 +1957,19 @@ static int snd_soc_bind_card(struct snd_soc_card *card)
 	snd_soc_dapm_new_widgets(card);
 
 	ret = snd_card_register(card->snd_card);
+#ifdef CONFIG_P480_A3C
+	/* P480 diagnostic only: report the actual ALSA registration result,
+	 * scoped to the lito Kona machine. Do not modify core error handling.
+	 */
+	if (card->name && !strcmp(card->name, "lito-lagoonmtp-snd-card") &&
+	    card->dev->of_node &&
+	    of_device_is_compatible(card->dev->of_node, "qcom,kona-asoc-snd")) {
+		if (ret < 0)
+			dev_err(card->dev, "P480 A3c SND_CARD_REGISTER rc=%d\n", ret);
+		else
+			dev_info(card->dev, "P480 A3c SND_CARD_REGISTER rc=%d\n", ret);
+	}
+#endif
 	if (ret < 0) {
 		dev_err(card->dev, "ASoC: failed to register soundcard %d\n",
 				ret);
