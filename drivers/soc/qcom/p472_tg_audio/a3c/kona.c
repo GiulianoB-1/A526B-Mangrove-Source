@@ -8090,7 +8090,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		ret, card->name, card->num_links, p480_skipped);
 	if (!ret) {
 		dev_info(&pdev->dev,
-			 "P480 A3c ROUTES added=%u failed=0\n",
+			 "P480 A3c ROUTES added=%d failed=0\n",
 			 card->num_of_dapm_routes);
 		dev_info(&pdev->dev, "P480 A3c CARD_NUMBER number=%d\n",
 			 card->snd_card->number);
