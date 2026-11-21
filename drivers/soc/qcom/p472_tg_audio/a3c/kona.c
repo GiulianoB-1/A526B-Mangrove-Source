@@ -7828,8 +7828,8 @@ static const char *p480_skip_reason(const struct snd_soc_card *card,
 	/* TG A52 uses quinary MI2S for the unported TAS256x amplifier.
 	 * Never include this path solely to make the sound card bind.
 	 */
-	if (strstr(name, "Quinary MI2S") ||
-	    strstr(name, "QUIN MI2S"))
+	if (l->id == MSM_BACKEND_DAI_QUINARY_MI2S_RX ||
+	    l->id == MSM_BACKEND_DAI_QUINARY_MI2S_TX)
 		return "TAS_NOT_PORTED";
 	if (l->ignore)
 		return "NO_HOST_CORE_ABI_NOT_PORTED";
@@ -7893,8 +7893,11 @@ static void p480_filter_optional_mi2s(struct snd_soc_card *card)
 	for (i = 0; i < card->num_links; i++) {
 		struct snd_soc_dai_link *link = &card->dai_link[i];
 		const char *n = link->name ? link->name : "";
-		bool optional = strstr(n, "Quaternary MI2S") ||
-				strstr(n, "Senary MI2S");
+		bool optional =
+			link->id == MSM_BACKEND_DAI_QUATERNARY_MI2S_RX ||
+			link->id == MSM_BACKEND_DAI_QUATERNARY_MI2S_TX ||
+			link->id == MSM_BACKEND_DAI_SENARY_MI2S_RX ||
+			link->id == MSM_BACKEND_DAI_SENARY_MI2S_TX;
 
 		if (optional && link->num_cpus &&
 		    !snd_soc_find_dai_with_mutex(&link->cpus[0])) {
