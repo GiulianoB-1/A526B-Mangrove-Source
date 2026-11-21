@@ -538,6 +538,9 @@ jobs:
           grep -aFq 'P480 A3c ROUTE_SKIPPED sink=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c ROUTE_KEPT sink=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c KCONTROLS count=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'reason=SUPPLY_SINK_FROM_NON_SUPPLY' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c SND_CARD_REGISTER rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s' out_A3C/arch/arm64/boot/Image
           # Prove the caller uses the external A3b symbols, not inline stubs.
           llvm-nm out_A3C/drivers/soc/qcom/p472_tg_audio/a3c/kona.o > package/A3C/P480-kona-symbols.txt
           grep -Eq '[[:space:]]U[[:space:]]+bolero_set_port_map$' package/A3C/P480-kona-symbols.txt
@@ -654,6 +657,9 @@ jobs:
               b'P480 A3c ROUTE_KEPT sink=',
               b'P480 A3c ROUTES kept=',
               b'P480 A3c KCONTROLS count=',
+              b'reason=SUPPLY_SINK_FROM_NON_SUPPLY',
+              b'P480 A3c SND_CARD_REGISTER rc=',
+              b'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s',
           ]
           assert all(m in current for m in markers), 'missing A3C markers in repacked Image'
           assert all(m not in baseline for m in markers), 'A3C markers found in pinned P479'
@@ -687,9 +693,10 @@ jobs:
           cp ci/P480-A3C-DIRECTION-EXPECTED.csv package/A3C/
           cp ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv package/A3C/
           cp ci/P480-A3C-DAPM-REVIEW.md package/A3C/
+          cp ci/P480-A3C-DAPM-FIX4-REVIEW.md package/A3C/
           cp ci/p480_collect_audio_readonly.sh package/A3C/
-          echo 'P480 A3C genuine TG RX init and exact DAPM route fix. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum MANGROVE-P480-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-kona-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'P480 A3C Fix 4: exact five invalid mic-to-supply routes. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P480-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P480-kona-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
