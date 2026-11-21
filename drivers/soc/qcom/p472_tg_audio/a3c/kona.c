@@ -7153,6 +7153,56 @@ static const struct of_device_id kona_asoc_machine_of_match[]  = {
 	{},
 };
 
+/* The donor link templates and their component arrays are static. DT
+ * population clears component names in place. A shallow link-table copy
+ * still corrupts those templates on the first deferred probe. Therefore
+ * every probe owns a fresh card, link table and per-link CPU/CODEC/PLATFORM
+ * component arrays, allocated under that probe's devres lifetime.
+ */
+static struct snd_soc_card *p480_copy_card_links(struct device *dev,
+						 const struct snd_soc_card *src)
+{
+	struct snd_soc_card *card;
+	struct snd_soc_dai_link *links;
+	int i;
+
+	card = devm_kmemdup(dev, src, sizeof(*src), GFP_KERNEL);
+	if (!card)
+		return ERR_PTR(-ENOMEM);
+	links = devm_kmemdup(dev, src->dai_link,
+			     src->num_links * sizeof(*links), GFP_KERNEL);
+	if (!links)
+		return ERR_PTR(-ENOMEM);
+	for (i = 0; i < src->num_links; i++) {
+		struct snd_soc_dai_link *l = &links[i];
+
+		if (l->num_cpus && l->cpus) {
+			l->cpus = devm_kmemdup(dev, l->cpus,
+					      l->num_cpus * sizeof(*l->cpus),
+					      GFP_KERNEL);
+			if (!l->cpus)
+				return ERR_PTR(-ENOMEM);
+		}
+		if (l->num_codecs && l->codecs) {
+			l->codecs = devm_kmemdup(dev, l->codecs,
+						l->num_codecs * sizeof(*l->codecs),
+						GFP_KERNEL);
+			if (!l->codecs)
+				return ERR_PTR(-ENOMEM);
+		}
+		if (l->num_platforms && l->platforms) {
+			l->platforms = devm_kmemdup(dev, l->platforms,
+						   l->num_platforms *
+						   sizeof(*l->platforms),
+						   GFP_KERNEL);
+			if (!l->platforms)
+				return ERR_PTR(-ENOMEM);
+		}
+	}
+	card->dai_link = links;
+	return card;
+}
+
 static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 {
 	struct snd_soc_card *card = NULL;
@@ -7322,9 +7372,9 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	if (card) {
 		card->dai_link = dailink;
 		card->num_links = total_links;
+		return p480_copy_card_links(dev, card);
 	}
-
-	return card;
+	return NULL;
 }
 
 static int msm_wsa881x_init(struct snd_soc_component *component)
@@ -7931,66 +7981,109 @@ static int msm_audio_ssr_register(struct device *dev)
  * The stock FE-only virtual codec remains the normal ASoC FE endpoint.
  */
 static int p480_skipped;
-static const char *p480_skip_reason(const struct snd_soc_dai_link *l)
+
+/* A populated platform component has an OF node instead of a name.
+ * Resolve the same permitted DT binding in either representation.
+ */
+static bool p480_platform_is_ported(const struct snd_soc_card *card,
+				   const struct snd_soc_dai_link_component *p)
 {
-    const char *n = l->name ? l->name : "";
-    const char *p = (l->num_platforms && l->platforms[0].name)
-                    ? l->platforms[0].name : "";
-    unsigned int k;
-    static const char * const unsupported[] = {
-        "Voice", "VOICE", "VoIP", "VOIP", "InCall", "INCALL",
-        "Listen", "LISTEN", "WSA", "wsa", "TAS256", "tas256",
-        "SLIMBUS", "slimbus", "Bluetooth", "BT", "DISPLAY",
-        "Display", "HDMI", "USB", "CVD", "cvd"
-    };
-    static const char * const platforms[] = {
-        "msm-pcm-dsp.0", "msm-pcm-dsp.1", "msm-pcm-dsp.2",
-        "msm-compress-dsp", "msm-pcm-hostless", "msm-pcm-afe",
-        "msm-pcm-routing", "msm-pcm-dsp-noirq", "msm-compr-dsp"
-    };
-    bool valid = false;
-    if (l->ignore)
-        return "NO_HOST_CORE_ABI_NOT_PORTED";
-    for (k = 0; k < ARRAY_SIZE(unsupported); k++)
-        if (strstr(n, unsupported[k]))
-            return "UNPORTED_OR_VOICE_LINK";
-    for (k = 0; k < ARRAY_SIZE(platforms); k++)
-        if (!strcmp(p, platforms[k]))
-            valid = true;
-    if (!valid)
-        return "PLATFORM_NOT_PORTED";
-    for (k = 0; k < l->num_codecs; k++) {
-        const char *c = l->codecs[k].name;
-        if (!c)
-            continue;
-        if (strstr(c, "wsa") || strstr(c, "tas") ||
-            strstr(c, "wcd937x") || strstr(c, "swr-dmic") ||
-            strstr(c, "btfmslim") || strstr(c, "ext-disp") ||
-            strstr(c, "swr-haptics"))
-            return "PHYSICAL_CODEC_NOT_PORTED";
-    }
-    return NULL;
+	static const char * const ported[] = {
+		"msm-pcm-dsp.0", "msm-pcm-dsp.1", "msm-pcm-dsp.2",
+		"msm-compress-dsp", "msm-pcm-hostless", "msm-pcm-afe",
+		"msm-pcm-routing", "msm-pcm-dsp-noirq", "msm-compr-dsp"
+	};
+	unsigned int i;
+
+	if (!p)
+		return false;
+	for (i = 0; i < ARRAY_SIZE(ported); i++) {
+		struct device_node *node;
+		int index;
+
+		if (p->name && !strcmp(p->name, ported[i]))
+			return true;
+		if (!p->of_node || !card->dev || !card->dev->of_node)
+			continue;
+		index = of_property_match_string(card->dev->of_node,
+						 "asoc-platform-names", ported[i]);
+		if (index < 0)
+			continue;
+		node = of_parse_phandle(card->dev->of_node, "asoc-platform",
+					index);
+		if (!node)
+			continue;
+		if (node == p->of_node) {
+			of_node_put(node);
+			return true;
+		}
+		of_node_put(node);
+	}
+	return false;
 }
+
+static const char *p480_skip_reason(const struct snd_soc_card *card,
+				   const struct snd_soc_dai_link *l)
+{
+	const char *name = l->name ? l->name : "";
+	unsigned int k;
+	static const char * const unsupported[] = {
+		"Voice", "VOICE", "VoIP", "VOIP", "InCall", "INCALL",
+		"Listen", "LISTEN", "WSA", "wsa", "TAS256", "tas256",
+		"SLIMBUS", "slimbus", "Bluetooth", "BT", "DISPLAY",
+		"Display", "HDMI", "USB", "CVD", "cvd"
+	};
+
+	if (l->ignore)
+		return "NO_HOST_CORE_ABI_NOT_PORTED";
+	for (k = 0; k < ARRAY_SIZE(unsupported); k++)
+		if (strstr(name, unsupported[k]))
+			return "UNPORTED_OR_VOICE_LINK";
+	/* A link can have multiple platforms. They must all be ported. */
+	if (!l->num_platforms)
+		return "PLATFORM_NOT_PORTED";
+	for (k = 0; k < l->num_platforms; k++)
+		if (!p480_platform_is_ported(card, &l->platforms[k]))
+			return "PLATFORM_NOT_PORTED";
+	for (k = 0; k < l->num_codecs; k++) {
+		const char *codec = l->codecs[k].name;
+
+		if (!codec)
+			continue;
+		if (strstr(codec, "wsa") || strstr(codec, "tas") ||
+		    strstr(codec, "wcd937x") || strstr(codec, "swr-dmic") ||
+		    strstr(codec, "btfmslim") || strstr(codec, "ext-disp") ||
+		    strstr(codec, "swr-haptics"))
+			return "PHYSICAL_CODEC_NOT_PORTED";
+	}
+	return NULL;
+}
+
 static void p480_filter_links(struct snd_soc_card *card)
 {
-    int i, used = 0;
-    p480_skipped = 0;
-    for (i = 0; i < card->num_links; i++) {
-        struct snd_soc_dai_link *l = &card->dai_link[i];
-        const char *reason = p480_skip_reason(l);
-        if (reason) {
-            dev_info(card->dev,
-                "P480 A3c LINK_SKIPPED name=%s reason=%s\n",
-                l->name ? l->name : "UNNAMED", reason);
-            p480_skipped++;
-            continue;
-        }
-        if (i != used)
-            card->dai_link[used] = *l;
-        used++;
-    }
-    card->num_links = used;
+	int i, used = 0;
+
+	p480_skipped = 0;
+	/* Only the probe-owned link table may be compacted. The donor
+	 * templates and their component arrays must remain untouched.
+	 */
+	for (i = 0; i < card->num_links; i++) {
+		struct snd_soc_dai_link *link = &card->dai_link[i];
+		const char *reason = p480_skip_reason(card, link);
+
+		if (reason) {
+			dev_info(card->dev, "P480 A3c LINK_SKIPPED name=%s reason=%s\n",
+				 link->name ? link->name : "UNNAMED", reason);
+			p480_skipped++;
+			continue;
+		}
+		if (i != used)
+			card->dai_link[used] = *link;
+		used++;
+	}
+	card->num_links = used;
 }
+
 static void p480_log_real_device_counts(struct snd_soc_card *card)
 {
     int pcm = 0, compress = 0;
@@ -8005,6 +8098,61 @@ static void p480_log_real_device_counts(struct snd_soc_card *card)
     }
     dev_info(card->dev, "P480 A3c DEVICES pcm=%d compress=%d\n",
              pcm, compress);
+}
+
+/* ASoC normally prints only a DAI name, which can be NULL after the
+ * DT resolver consumes it. Identify the exact missing component on
+ * each deferred registration attempt, without fabricating a provider.
+ */
+static void p480_log_deferred_components(struct snd_soc_card *card)
+{
+	struct snd_soc_dai_link *link;
+	int i, j;
+
+	for (i = 0; i < card->num_links; i++) {
+		link = &card->dai_link[i];
+		for (j = 0; j < link->num_cpus; j++) {
+			struct snd_soc_dai_link_component *c = &link->cpus[j];
+
+			if (!snd_soc_find_dai_with_mutex(c))
+				dev_warn(card->dev,
+					 "P480 A3c DEFER_MISSING link=%s kind=CPU name=%s dai=%s node=%pOF\n",
+					 link->name, c->name ? c->name : "OF",
+					 c->dai_name ? c->dai_name : "OF",
+					 c->of_node);
+		}
+		for (j = 0; j < link->num_codecs; j++) {
+			struct snd_soc_dai_link_component *c = &link->codecs[j];
+
+			if (!snd_soc_find_dai_with_mutex(c))
+				dev_warn(card->dev,
+					 "P480 A3c DEFER_MISSING link=%s kind=CODEC name=%s dai=%s node=%pOF\n",
+					 link->name, c->name ? c->name : "OF",
+					 c->dai_name ? c->dai_name : "OF",
+					 c->of_node);
+		}
+		for (j = 0; j < link->num_platforms; j++) {
+			struct snd_soc_dai_link_component *c = &link->platforms[j];
+			struct device *dev = NULL;
+			struct platform_device *pdev;
+
+			if (c->of_node) {
+				pdev = of_find_device_by_node(c->of_node);
+				if (pdev)
+					dev = &pdev->dev;
+			} else if (c->name) {
+				dev = bus_find_device_by_name(&platform_bus_type,
+							      NULL, c->name);
+			}
+			if (!dev || !snd_soc_lookup_component(dev, NULL))
+				dev_warn(card->dev,
+					 "P480 A3c DEFER_MISSING link=%s kind=PLATFORM name=%s node=%pOF\n",
+					 link->name, c->name ? c->name : "OF",
+					 c->of_node);
+			if (dev)
+				put_device(dev);
+		}
+	}
 }
 
 static int msm_asoc_machine_probe(struct platform_device *pdev)
@@ -8031,6 +8179,10 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 				&pdata->lito_v2_enabled);
 
 	card = populate_snd_card_dailinks(&pdev->dev);
+	if (IS_ERR(card)) {
+		ret = PTR_ERR(card);
+		goto err;
+	}
 	if (!card) {
 		dev_err(&pdev->dev, "%s: Card uninitialized\n", __func__);
 		ret = -EINVAL;
@@ -8077,8 +8229,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	if (!ret)
 		p480_log_real_device_counts(card);
 	if (ret == -EPROBE_DEFER) {
-		if (codec_reg_done)
-			ret = -EINVAL;
+		p480_log_deferred_components(card);
 		goto err;
 	} else if (ret) {
 		dev_err(&pdev->dev, "%s: snd_soc_register_card failed (%d)\n",
