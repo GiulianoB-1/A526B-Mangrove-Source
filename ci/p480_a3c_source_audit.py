@@ -240,6 +240,48 @@ def main() -> None:
           "MSM_PRIM_MI2S_RX" not in mi2s_header,
           "TG duplex RX/TX DAI state and diagnostics")
 
+    # Linux 5.10 rejects DPCM links whose CPU DAIs have zero channel
+    # minimum in a requested direction. Do not change TG DAI capability
+    # masks or disable DAPM route checking to avoid the error.
+    routing = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-pcm-routing-v2.c")
+    check("static int p480_filter_cpu_stream_directions(" in kona_source and
+          "snd_soc_find_dai_with_mutex(&link->cpus[j])" in kona_source and
+          "snd_soc_dai_stream_valid(dai," in kona_source and
+          "SNDRV_PCM_STREAM_PLAYBACK" in kona_source and
+          "SNDRV_PCM_STREAM_CAPTURE" in kona_source and
+          "return -EPROBE_DEFER;" in kona_source and
+          "link->dpcm_playback = 0;" in kona_source and
+          "link->dpcm_capture = 0;" in kona_source,
+          "5.10 DPCM directions derive solely from live CPU DAI capabilities")
+    check(all(("reason = \"" + reason + "\"") in kona_source for reason in (
+          "CPU_DAI_NO_PLAYBACK", "CPU_DAI_NO_CAPTURE", "CPU_DAI_NO_STREAMS")) and
+          "P480 A3c LINK_DIR_TRIM name=" in kona_source and
+          "P480 A3c LINK_KEPT name=" in kona_source and
+          "p480_skipped++;" in kona_source and
+          kona_source.index("p480_filter_optional_mi2s(card);") <
+          kona_source.index("p480_filter_cpu_stream_directions(card);") <
+          kona_source.index("msm_init_aux_dev(pdev, card);") <
+          kona_source.index("devm_snd_soc_register_card(&pdev->dev, card);"),
+          "probe-owned link filter logs all skipped, trimmed and retained links")
+    check("static unsigned int p480_routing_regless_read(" in routing and
+          "static int p480_routing_regless_write(" in routing and
+          ".read\t\t= p480_routing_regless_read," in routing and
+          ".write\t\t= p480_routing_regless_write," in routing and
+          "P480 A3c ROUTING_REGLESS_WRITE" in routing and
+          "return 0;" in routing,
+          "virtual software routing component has safe register-less callbacks")
+    check("card->disable_route_checks = false;" in kona_source and
+          "P480 A3c ROUTES added=%u failed=0" in kona_source and
+          "card->num_of_dapm_routes" in kona_source and
+          "P480 A3c CARD_NUMBER number=%d" in kona_source and
+          "P480 A3c DEVICES pcm=%d compress=%d" in kona_source,
+          "route checking kept enabled, card number and real PCM/compress counts logged")
+    check("P480 A3c INIT_FAIL stage=platform rc=%d" in a3a_init and
+          "P480 A3c INIT_FAIL stage=machine rc=%d" in a3a_init and
+          a3a_init.count("goto a3c_nonfatal;") == 2 and
+          "p480_audio_platform_exit();" in a3a_init,
+          "A3c registration failures log stage and retain the A3a Q6 stack")
+
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
     read("ci/p480_p479_boot_repack.py")
