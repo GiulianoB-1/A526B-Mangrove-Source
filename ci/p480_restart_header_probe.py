@@ -48,7 +48,7 @@ def layout(obj,name):
     found["size"]=int(size.group(1)) if size else None
     for k in expected:
         if k=="size":continue
-        m=re.search(r"\b"+re.escape(k)+r"\s*;\s*/\*\s*(\d+)\s+",text)
+        m=re.search(r"(?:\(\*\s*"+re.escape(k)+r"\)\([^;]*;|\b"+re.escape(k)+r"\s*;)\s*/\*\s*(\d+)\s+",text)
         found[k]=int(m.group(1)) if m else None
     return {"status":"MATCH_ORIGINAL_P479" if found==expected else "ABI_MISMATCH",
             "expected":expected,"found":found,
@@ -64,7 +64,7 @@ flags=["make","O="+str(out),"ARCH=arm64","CROSS_COMPILE=aarch64-linux-gnu-",
 cmd(flags+["olddefconfig"],"olddefconfig.log")
 assert (out/".config").read_text()==config
 cmd(flags+["prepare","scripts"],"prepare.log")
-compilation=cmd(flags+["-j8"]+targets,"target-objects.log",required=False)
+compilation=cmd(flags+["-j8"]+ordinary+["drivers/platform/msm/ipa/ipam.o", "drivers/a52_pil/subsystem_restart.o"],"target-objects.log",required=False)
 print("Target object make status:",compilation.returncode,flush=True)
 rows=[]
 failures=[]
