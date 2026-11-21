@@ -124,6 +124,16 @@ fi
   echo "WCD938x bind, and the preserved battery/charging protections."
 } > "$OUT/SUMMARY.txt"
 
+# Preserve the chronological records, including repeats from failed probes.
+# Do not pretend that deduplicated records from separate attempts are one
+# registered card. CARD register rc=0 identifies a successful instance.
+if [ -f "$OUT/kernel_audio_messages.txt" ]; then
+  grep -E 'P480 A3c (LINK_KEPT |LINK_SKIPPED |LINK_DIR_TRIM |INIT_MOVED |CARD register )' \
+    "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_link_attempts.txt" || true
+  grep -E 'P480 A3c (ROUTE_KEPT |ROUTE_SKIPPED |ROUTES |INIT_MOVED |PORT_MAP=|AUDRX_INIT |WSA_INIT_SKIPPED |CARD register |CARD_NUMBER |DEVICES |KCONTROLS )' \
+    "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_route_attempts.txt" || true
+fi
+
 # Optional TAR output in the same user directory. Nothing touches partitions.
 if command -v tar >/dev/null 2>&1; then
   case "$OUT" in
