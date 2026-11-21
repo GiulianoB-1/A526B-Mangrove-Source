@@ -1,0 +1,18 @@
+{
+  "schema": "P480-A3C-WERROR-FIX-v1",
+  "failed_run": 44940838548,
+  "failed_job": 136957514162,
+  "root_causes": [
+    "a3c/kona.c unused variable msm_codec_conf (Werror)",
+    "a3c/kona.c unused function msm_wsa881x_init (Werror)"
+  ],
+  "repair": [
+    "remove stale file-scope codec-conf pointer",
+    "remove unported WSA AUX callback only",
+    "add regression source audit"
+  ],
+  "variant": "A3C_ONLY",
+  "artifact_flash_authorized": false,
+  "hardware_verified": false,
+  "claude_review_required": true
+}
