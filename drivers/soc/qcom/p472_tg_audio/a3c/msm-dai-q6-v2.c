@@ -7649,59 +7649,52 @@ static u16 msm_dai_q6_mi2s_get_num_channels(u16 config)
 	}
 }
 
+/* TG r02 provides independent RX/TX SD masks, including zero masks.
+ * This 5.10 adaptation retains one DAI per direction; validate both
+ * masks, then apply the selected stream's channel configuration.
+ */
 static int msm_dai_q6_mi2s_platform_data_validation(
-	struct platform_device *pdev, struct snd_soc_dai_driver *dai_driver)
+	struct platform_device *pdev, struct snd_soc_dai_driver *driver)
 {
-	struct msm_dai_q6_mi2s_dai_data *dai_data = dev_get_drvdata(&pdev->dev);
-	struct msm_mi2s_pdata *mi2s_pdata =
-			(struct msm_mi2s_pdata *) pdev->dev.platform_data;
-	unsigned int ch_cnt;
-	int rc = 0;
-	u16 sd_line;
+	struct msm_dai_q6_mi2s_dai_data *data = dev_get_drvdata(&pdev->dev);
+	struct msm_mi2s_pdata *pdata = pdev->dev.platform_data;
+	unsigned int rx_count = 0, tx_count = 0;
+	u16 rx_config = 0, tx_config = 0;
+	int rc;
 
-	if (mi2s_pdata == NULL) {
-		pr_err("%s: mi2s_pdata NULL", __func__);
+	if (!pdata)
+		return -EINVAL;
+	rc = msm_dai_q6_mi2s_get_lineconfig(pdata->rx_sd_lines,
+					     &rx_config, &rx_count);
+	if (rc) {
+		dev_err(&pdev->dev, "invalid RX SD mask 0x%x\n", pdata->rx_sd_lines);
+		return rc;
+	}
+	rc = msm_dai_q6_mi2s_get_lineconfig(pdata->tx_sd_lines,
+					     &tx_config, &tx_count);
+	if (rc) {
+		dev_err(&pdev->dev, "invalid TX SD mask 0x%x\n", pdata->tx_sd_lines);
+		return rc;
+	}
+	/* The OF device name is not a reliable RX/TX direction indicator. */
+	if (driver->playback.stream_name) {
+		data->mi2s_dai.mi2s_dai_data.port_config.i2s.channel_mode = rx_config;
+		data->mi2s_dai.pdata_mi2s_lines = rx_config;
+		driver->playback.channels_min = rx_count ? 1 : 0;
+		driver->playback.channels_max = rx_count << 1;
+	} else if (driver->capture.stream_name) {
+		data->mi2s_dai.mi2s_dai_data.port_config.i2s.channel_mode = tx_config;
+		data->mi2s_dai.pdata_mi2s_lines = tx_config;
+		driver->capture.channels_min = tx_count ? 1 : 0;
+		driver->capture.channels_max = tx_count << 1;
+	} else {
 		return -EINVAL;
 	}
-
-	rc = msm_dai_q6_mi2s_get_lineconfig(mi2s_pdata->sd_lines,
-				&sd_line, &ch_cnt);
-	if (rc < 0) {
-		dev_err(&pdev->dev, "invalid MI2S RX sd line config\n");
-		goto rtn;
-	}
-
-	if (strnstr(dev_name(&pdev->dev), "rx", strlen(dev_name(&pdev->dev)))
-		!= NULL) {
-		if (ch_cnt) {
-			dai_data->mi2s_dai.mi2s_dai_data.port_config.i2s.channel_mode =
-			sd_line;
-			dai_data->mi2s_dai.pdata_mi2s_lines = sd_line;
-			dai_driver->playback.channels_min = 1;
-			dai_driver->playback.channels_max = ch_cnt << 1;
-		} else {
-			dai_driver->playback.channels_min = 0;
-			dai_driver->playback.channels_max = 0;
-		}
-	} else {
-		if (ch_cnt) {
-			dai_data->mi2s_dai.mi2s_dai_data.port_config.i2s.channel_mode =
-			sd_line;
-			dai_data->mi2s_dai.pdata_mi2s_lines = sd_line;
-			dai_driver->capture.channels_min = 1;
-			dai_driver->capture.channels_max = ch_cnt << 1;
-		} else {
-			dai_driver->capture.channels_min = 0;
-			dai_driver->capture.channels_max = 0;
-		}
-	}
-	dev_dbg(&pdev->dev, "%s: sdlines 0x%x\n",
-		__func__, dai_data->mi2s_dai.pdata_mi2s_lines);
-	dev_dbg(&pdev->dev, "%s: playback ch_max %d capture ch_mx %d\n",
-		__func__, dai_driver->playback.channels_max,
-		dai_driver->capture.channels_max);
-rtn:
-	return rc;
+	dev_info(&pdev->dev,
+		 "P480 A3c MI2S_CONFIG id=%u RX=0x%x TX=0x%x playback_max=%u capture_max=%u\n",
+		 pdata->intf_id, pdata->rx_sd_lines, pdata->tx_sd_lines,
+		 driver->playback.channels_max, driver->capture.channels_max);
+	return 0;
 }
 
 static const struct snd_soc_component_driver msm_q6_mi2s_dai_component = {
@@ -7711,7 +7704,7 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 {
 	struct msm_dai_q6_mi2s_dai_data *dai_data;
 	const char *q6_mi2s_dev_id = "qcom,msm-dai-q6-mi2s-dev-id";
-	u32 mi2s_intf_line = 0;
+	u32 rx_line = 0, tx_line = 0;
 	u32 mi2s_intf = 0;
 	struct msm_mi2s_pdata *mi2s_pdata;
 	int rc;
@@ -7744,16 +7737,27 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 		goto rtn;
 	}
 
+	/* Read the separate masks used by the Samsung A52/TG DT. */
 	rc = of_property_read_u32(pdev->dev.of_node,
-			"qcom,msm-mi2s-lines", &mi2s_intf_line);
+				  "qcom,msm-mi2s-rx-lines", &rx_line);
 	if (rc) {
-		dev_err(&pdev->dev,
-			"%s: Mi2s line from DT file %s\n", __func__,
-			"qcom,msm-mi2s-lines");
+		dev_err(&pdev->dev, "missing qcom,msm-mi2s-rx-lines rc=%d\n", rc);
 		goto free_pdata;
 	}
-
-	mi2s_pdata->sd_lines = mi2s_intf_line;
+	rc = of_property_read_u32(pdev->dev.of_node,
+				  "qcom,msm-mi2s-tx-lines", &tx_line);
+	if (rc) {
+		dev_err(&pdev->dev, "missing qcom,msm-mi2s-tx-lines rc=%d\n", rc);
+		goto free_pdata;
+	}
+	if ((rx_line | tx_line) & ~0xffU) {
+		rc = -EINVAL;
+		dev_err(&pdev->dev, "invalid MI2S masks RX=%x TX=%x\n",
+			rx_line, tx_line);
+		goto free_pdata;
+	}
+	mi2s_pdata->rx_sd_lines = rx_line;
+	mi2s_pdata->tx_sd_lines = tx_line;
 	mi2s_pdata->intf_id = mi2s_intf;
 
 	dai_data = kzalloc(sizeof(struct msm_dai_q6_mi2s_dai_data),
