@@ -96,11 +96,13 @@ static int __init p472_a3a_start(void)
 	 */
 	rc = p480_audio_platform_init();
 	if (rc) {
+		pr_err("P480 A3c INIT_FAIL stage=platform rc=%d; A3a preserved\n", rc);
 		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d; A3a preserved\n", rc);
 		goto a3c_nonfatal;
 	}
 	rc = p480_kona_machine_init();
 	if (rc) {
+		pr_err("P480 A3c INIT_FAIL stage=machine rc=%d; A3a preserved\n", rc);
 		pr_err("P480 A3c MACHINE_SKIPPED reason=machine_register_failed rc=%d; A3a preserved\n", rc);
 		p480_audio_platform_exit();
 		goto a3c_nonfatal;
