@@ -1,0 +1,39 @@
+{
+  "schema": "P480-A3C-MI2S-RETRY-REVIEW-v1",
+  "source_baseline": "9572003672895f7c804299d4957759fd30859dcf",
+  "donor": "micr0softstore/samsung_android_kernel_a52xq@6bf351bdf18bdb228db79e66f14a7a9c0178e5d7",
+  "hardware_result_before_fix": {
+    "boots": true,
+    "init_order_pass": true,
+    "mi2s_probes_failed": 6,
+    "mi2s_error": -22,
+    "card_register_rc": -517
+  },
+  "fixes": [
+    "TG dual RX/TX MI2S keys with per-direction validation",
+    "devm card/link and component array copy on every probe",
+    "platform name or DT of_node allowlist",
+    "-EPROBE_DEFER retained with CPU/CODEC/PLATFORM diagnostics",
+    "A3c registration failure does not unwind A3a"
+  ],
+  "other_mismatches": {
+    "ported_optional_only": [
+      "qcom,msm-cdc-dma-data-align"
+    ],
+    "tg_kona_only": [
+      "qcom,cps_reg_phy_addr",
+      "qcom,cps_threshold_levels",
+      "qcom,cps_wsa_vbatt_temp_reg_addr",
+      "qcom,cps_normal_values",
+      "qcom,cps_lower1_values",
+      "qcom,cps_lower2_values",
+      "qcom,fm-lna-gpios"
+    ]
+  },
+  "remaining_review": "TG MI2S duplex per interface vs 5.10 donor split RX/TX DAI topology",
+  "post_fix_hardware_validated": false,
+  "claude_approval": false,
+  "flash_authorized": false,
+  "requested_variant": "A3C_ONLY",
+  "note": "Source and boot checks do not prove working ALSA hardware."
+}
