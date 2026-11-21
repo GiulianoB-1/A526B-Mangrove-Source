@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   compile:
-    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || (contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]'))))) }}
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -163,7 +163,7 @@ jobs:
   dual:
     env:
       LOCALVERSION: ''  # Match original P479 module vermagic; no auto '+'
-    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-COMPARE]')) }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]'))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -271,7 +271,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
       - name: Download ONLY authenticated final P479 HLT boot reference
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -310,8 +310,46 @@ jobs:
               'flash_authorized':False},indent=2,sort_keys=True)+'\n')
           print('Exact final P479 HLT source boot and DTB PIN VERIFIED, nohlt absent')
           PY
+      - name: Gate exact original P479 vmlinux strings and rebuilt P480 module vermagic (NO FLASH)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
+        run: |
+          set -Eeuo pipefail
+          unzip -p package/archive/p479-reference-14131467025.zip phase447b-variants/P471-D1-DATARMNET-CANDIDATE.vmlinux > package/input/original-P479.vmlinux
+          python3 - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          def capture(path):
+              result={'vermagic':set(),'dynamic_debug_paths':set()}
+              with subprocess.Popen(['strings','-a',str(path)],stdout=subprocess.PIPE,text=True,errors='replace') as p:
+                  for line in p.stdout:
+                      line=line.strip()
+                      if 'SMP preempt' in line and 'modversions' in line and 'aarch64' in line:
+                          result['vermagic'].add(line)
+                      if 'lib/dynamic_debug.c' in line:
+                          result['dynamic_debug_paths'].add(line)
+                  assert p.wait()==0,path
+              return {k:sorted(v) for k,v in result.items()}
+          expected='5.10.252-Mangrove SMP preempt mod_unload modversions aarch64'
+          old=Path('package/input/original-P479.vmlinux')
+          records={'P479-original':capture(old)}
+          for variant in ('CONTROL','NO-A3C','A3C'):
+              records[variant]=capture(Path('out_'+variant)/'vmlinux')
+          assert all(v['vermagic']==[expected] for v in records.values()),records
+          assert '../../gki/common/lib/dynamic_debug.c' in records['P479-original']['dynamic_debug_paths']
+          assert all('lib/dynamic_debug.c' in records[k]['dynamic_debug_paths'] for k in ('CONTROL','NO-A3C','A3C'))
+          evidence={'original_P479_and_rebuilt_3_variants':records,
+                    'original_reference_ELF_member':'phase447b-variants/P471-D1-DATARMNET-CANDIDATE.vmlinux',
+                    'all_vermagic_exact_original_P479':True,
+                    'runtime_loaded_vendor_ko_inventory':'NOT_AVAILABLE_IN_CI',
+                    'flash_authorized':False}
+          Path('package/audit/P480-vermagic-gate.json').write_text(json.dumps(evidence,indent=2)+'\n')
+          print('Original and new vmlinux exact vermagic PASS; embedded build path difference confirmed')
+          for name,info in records.items():
+              print(name,info)
+          PY
+          rm package/input/original-P479.vmlinux
       - name: Repack P479 control and both P480 builds, with zero DTB changes
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
         run: |
           set -Eeuo pipefail
           for variant in CONTROL A3C NO-A3C; do
@@ -376,7 +414,7 @@ jobs:
           echo 'P480 twins on P479 final HLT boot; P479 control reported, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
           rm -rf package/archive package/input
       - name: Save P479 control and template provenance audits
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-P479-BOOT-CONTROL-${{ github.sha }}
@@ -389,7 +427,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save P480-A3C image for review only
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
@@ -398,7 +436,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Save P480-NO-A3C image for review only
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
         uses: actions/upload-artifact@v4
         with:
           name: P480-NO-A3C-FINAL-P479-TEMPLATE-${{ github.sha }}
