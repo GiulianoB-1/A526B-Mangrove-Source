@@ -27,6 +27,16 @@ struct audio_cal_info {
 
 static struct audio_cal_info	audio_cal;
 
+#ifdef CONFIG_P480_A3C
+/* Guard calibration lists until the A2a late-initcall has completed. */
+static bool audio_cal_initialized;
+
+bool audio_cal_is_initialized(void)
+{
+	return READ_ONCE(audio_cal_initialized);
+}
+#endif
+
 
 static bool callbacks_are_equal(struct audio_cal_callbacks *callback1,
 				struct audio_cal_callbacks *callback2)
@@ -60,6 +70,12 @@ int audio_cal_deregister(int num_cal_types,
 	struct audio_cal_client_info *client_info_node = NULL;
 
 	pr_debug("%s\n", __func__);
+
+#ifdef CONFIG_P480_A3C
+	/* Registration failure must not try to walk an uninitialized list. */
+	if (!audio_cal_is_initialized())
+		return -ENODEV;
+#endif
 
 	if (reg_data == NULL) {
 		pr_err("%s: reg_data is NULL!\n", __func__);
@@ -114,6 +130,14 @@ int audio_cal_register(int num_cal_types,
 	struct audio_cal_callbacks *callback_node = NULL;
 
 	pr_debug("%s\n", __func__);
+
+#ifdef CONFIG_P480_A3C
+	/* Never use uninitialized list heads, even if init order regresses. */
+	if (!audio_cal_is_initialized()) {
+		pr_err_ratelimited("P480 A3c CAL_REGISTER_SKIPPED reason=not_initialized\n");
+		return -ENODEV;
+	}
+#endif
 
 	if (reg_data == NULL) {
 		pr_err("%s: callbacks are NULL!\n", __func__);
@@ -590,7 +614,9 @@ int __init audio_cal_init(void)
 	int i = 0;
 
 	pr_debug("%s\n", __func__);
-
+#ifdef CONFIG_P480_A3C
+	WRITE_ONCE(audio_cal_initialized, false);
+#endif
 	cal_utils_init();
 	memset(&audio_cal, 0, sizeof(audio_cal));
 	mutex_init(&audio_cal.common_lock);
@@ -599,7 +625,18 @@ int __init audio_cal_init(void)
 		mutex_init(&audio_cal.cal_mutex[i]);
 	}
 
+#ifdef CONFIG_P480_A3C
+	/* Publish readiness only after successful registration and list setup. */
+	{
+		int rc = misc_register(&audio_cal_misc);
+
+		if (!rc)
+			WRITE_ONCE(audio_cal_initialized, true);
+		return rc;
+	}
+#else
 	return misc_register(&audio_cal_misc);
+#endif
 }
 
 void audio_cal_exit(void)
@@ -608,6 +645,9 @@ void audio_cal_exit(void)
 	struct list_head *ptr, *next;
 	struct audio_cal_client_info *client_info_node;
 
+#ifdef CONFIG_P480_A3C
+	WRITE_ONCE(audio_cal_initialized, false);
+#endif
 	for (; i < MAX_CAL_TYPES; i++) {
 		list_for_each_safe(ptr, next,
 			&audio_cal.client_info[i]) {

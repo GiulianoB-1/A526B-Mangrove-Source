@@ -22,6 +22,14 @@ extern void q6asm_exit(void);
 extern int q6lsm_init(void);
 extern void q6lsm_exit(void);
 
+#ifdef CONFIG_P480_A3C
+extern bool p472_a2a_ready(void);
+extern bool audio_cal_is_initialized(void);
+extern int __init p480_audio_platform_init(void);
+extern void __init p480_audio_platform_exit(void);
+extern int __init p480_kona_machine_init(void);
+#endif
+
 static unsigned int p472_a3a_checks;
 
 static void p472_a3a_version_work(struct work_struct *work);
@@ -56,6 +64,12 @@ static int __init p472_a3a_start(void)
 	int rc;
 
 	/* TG q6_init.c:12-21, but A2a already owns adsp_err/cal/core/ION. */
+#ifdef CONFIG_P480_A3C
+	if (!p472_a2a_ready() || !audio_cal_is_initialized()) {
+		pr_err("P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready\n");
+		return -ENODEV;
+	}
+#endif
 	rc = rtac_init();
 	if (rc)
 		goto failed;
@@ -76,9 +90,29 @@ static int __init p472_a3a_start(void)
 		goto undo_asm;
 	pr_info("P472 A3a Q6 lsm registered rc=0\n");
 
+#ifdef CONFIG_P480_A3C
+	/* Explicit order: A2a -> A3a services -> A3c platform -> machine. */
+	rc = p480_audio_platform_init();
+	if (rc) {
+		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d\n", rc);
+		goto undo_lsm;
+	}
+	rc = p480_kona_machine_init();
+	if (rc) {
+		pr_err("P480 A3c MACHINE_SKIPPED reason=machine_register_failed rc=%d\n", rc);
+		p480_audio_platform_exit();
+		goto undo_lsm;
+	}
+	pr_info("P480 A3c INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=1\n");
+#endif
+
 	/* Only log versions returned by the actual ADSP. */
 	schedule_delayed_work(&p472_a3a_version_job, 10 * HZ);
 	return 0;
+#ifdef CONFIG_P480_A3C
+undo_lsm:
+	q6lsm_exit();
+#endif
 undo_asm:
 	q6asm_exit();
 undo_afe:
@@ -88,6 +122,9 @@ undo_adm:
 undo_rtac:
 	rtac_exit();
 failed:
+#ifdef CONFIG_P480_A3C
+	pr_err("P480 A3c PLATFORM_SKIPPED reason=a3a_services_failed rc=%d\n", rc);
+#endif
 	pr_err("P472 A3a Q6 REGISTER_FAIL rc=%d\n", rc);
 	return rc;
 }

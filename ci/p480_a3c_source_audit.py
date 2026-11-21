@@ -151,6 +151,26 @@ def main() -> None:
           "return p480_tg_render_mode(ac, render_mode, 0);" in compat,
           "render mode explicitly preserves original RX direction")
 
+    # P480: A3c platform and Kona machine must never be device-initcalls.
+    platform_init = read("drivers/soc/qcom/p472_tg_audio/a3c/platform_init.c")
+    kona_source = read("drivers/soc/qcom/p472_tg_audio/a3c/kona.c")
+    a3a_init = read("drivers/soc/qcom/p472_tg_audio/dsp/p472_a3a_q6_init.c")
+    cal_source = read("drivers/soc/qcom/p472_tg_audio/dsp/audio_calibration.c")
+    check("module_init(p480_audio_platform_init)" not in platform_init and
+          "module_platform_driver(kona_asoc_machine_driver)" not in kona_source,
+          "A3c platform and Kona machine have no premature device initcall")
+    check("rc = p480_audio_platform_init();" in a3a_init and
+          "rc = p480_kona_machine_init();" in a3a_init and
+          a3a_init.index("rc = q6lsm_init();") <
+          a3a_init.index("rc = p480_audio_platform_init();") <
+          a3a_init.index("rc = p480_kona_machine_init();"),
+          "A2a then A3a Q6 then A3c platform then machine")
+    check("CAL_REGISTER_SKIPPED reason=not_initialized" in cal_source and
+          "if (!audio_cal_is_initialized())" in cal_source and
+          "P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready" in a3a_init and
+          "P480 A3c PLATFORM_SKIPPED reason=a3a_services_failed" in a3a_init,
+          "calibration and Q6 fail-closed ordering gates")
+
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
     read("ci/p480_p479_boot_repack.py")

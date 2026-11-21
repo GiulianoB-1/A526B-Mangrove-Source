@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   compile:
-    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')))) }}
+    if: ${{ !((github.event_name == 'workflow_dispatch' && (inputs.p480_twins || inputs.p480_compare)) || (github.event_name == 'push' && (contains(github.event.head_commit.message, '[P480-COMPARE]') || contains(github.event.head_commit.message, '[P479-HEADERS]') || contains(github.event.head_commit.message, '[P480-ABI]') || contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]') || contains(github.event.head_commit.message, '[P480-A3C-INITFIX]')))) }}
     runs-on: ubuntu-22.04
     timeout-minutes: 210
     steps:
@@ -481,5 +481,115 @@ jobs:
           path: |
             p479-reference-audit/
             p480-abi-gate-evidence/
+          if-no-files-found: warn
+          retention-days: 90
+
+  a3c-initfix:
+    name: P480 A3c late-init dependency fix, A3C-only native build (NO FLASH)
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-A3C-INITFIX]') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LOCALVERSION: ''
+    steps:
+      - name: Checkout exact P480 A3c init-order fix
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail-closed A3c-only source, initcall and safety audits
+        run: |
+          set -Eeuo pipefail
+          git merge-base --is-ancestor 55babd9c651375580b3c5c10d7f37ac6213e005c HEAD
+          grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config
+          python3 ci/p480_a3c_source_audit.py --root .
+          python3 ci/p480_a3c_init_order_audit.py
+          ! grep -Eq '^module_init\(p480_audio_platform_init\);' drivers/soc/qcom/p472_tg_audio/a3c/platform_init.c
+          ! grep -Eq '^module_platform_driver\(kona_asoc_machine_driver\);' drivers/soc/qcom/p472_tg_audio/a3c/kona.c
+          grep -Fq 'P480 A3c PLATFORM_SKIPPED reason=' drivers/soc/qcom/p472_tg_audio/dsp/p472_a3a_q6_init.c
+      - name: Compile only P480 A3C native Image and vmlinux (no NO-A3C rebuild)
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          mkdir -p out_A3C package/A3C package/input package/archive package/audit
+          cp ci/build.config out_A3C/.config
+          make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          cmp ci/build.config out_A3C/.config
+          make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          grep -aFq 'P480 A3c INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=1' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CAL_REGISTER_SKIPPED reason=not_initialized' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CARD register rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_SKIPPED name=' out_A3C/arch/arm64/boot/Image
+          cp out_A3C/.config out_A3C/System.map package/A3C/
+          cp p480-init-order-audit.json package/A3C/
+          python3 - <<'PY'
+          from pathlib import Path
+          data=Path('out_A3C/vmlinux').read_bytes()
+          want=b'5.10.252-Mangrove SMP preempt mod_unload modversions aarch64'
+          bad=b'5.10.252-Mangrove+ SMP preempt mod_unload modversions aarch64'
+          assert want in data and bad not in data, 'A3c vermagic must match original P479'
+          print('A3C_ONLY exact P479 vermagic PASS, NO FLASH')
+          PY
+      - name: Authenticate the FINAL P479 boot and repack A3C only
+        run: |
+          set -Eeuo pipefail
+          gh release download p479-equivalence-reference --repo GiulianoB-1/A526B-Mangrove-Kernel --pattern p479-reference-14131467025.zip --dir package/archive
+          printf '%s  %s\n' 44412b170b639ebbbf6615e4a302ec8e4a83e09a934e32da49bbc1c801755230 package/archive/p479-reference-14131467025.zip | sha256sum -c -
+          python3 - <<'PY'
+          import gzip,hashlib,json,zipfile
+          from pathlib import Path
+          from ci.p480_boot_repack import parse_boot
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          with zipfile.ZipFile('package/archive/p479-reference-14131467025.zip') as z:
+              boot=z.read(m['archive_inner_path'])
+          h=lambda b:hashlib.sha256(b).hexdigest()
+          assert h(boot)==m['original_boot_sha256']
+          assert len(boot)==m['original_boot_size']
+          p=parse_boot(boot)
+          assert h(p['dtb'])==m['original_boot_dtb_sha256']
+          assert h(p['ramdisk'])==m['original_ramdisk_sha256']
+          assert h(gzip.decompress(p['kernel']))==m['original_uncompressed_kernel_sha256']
+          assert p['cmdline']==m['cmdline']
+          assert 'nohlt' not in p['cmdline'].split()
+          Path('package/input/P479-HLT.boot.img').write_bytes(boot)
+          PY
+          gzip -n -c out_A3C/arch/arm64/boot/Image > package/input/A3C.gz
+          python3 ci/p480_p479_boot_repack.py \
+            --source package/input/P479-HLT.boot.img \
+            --kernel package/input/A3C.gz \
+            --native-image out_A3C/arch/arm64/boot/Image \
+            --variant A3C \
+            --output package/A3C/P480-A3C-INIT-ORDER-FINAL-P479-DO-NOT-FLASH.img \
+            --report package/A3C/P480-A3C-init-order-repack.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('package/A3C/P480-A3C-init-order-repack.json').read_text())
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          assert all(j['invariants'].values()),j
+          assert j['original_P479_boot_sha256']==m['original_boot_sha256']
+          assert j['original_P479_DTB_sha256']==j['repacked_DTB_sha256']==m['original_boot_dtb_sha256']
+          assert j['original_P479_ramdisk_sha256']==j['repacked_ramdisk_sha256']==m['original_ramdisk_sha256']
+          assert j['original_P479_cmdline']==j['repacked_cmdline']==m['cmdline']
+          assert j['flash_authorized'] is False
+          print('P480 A3C only, exact real P479 container PASS; NO FLASH')
+          PY
+          cp ci/P480-test-notes.md package/A3C/
+          echo 'A3C LATE-INIT FIX. NO FLASH UNTIL CLAUDE REVIEWS BOOT-LOOP FIX.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum P480-A3C-INIT-ORDER-FINAL-P479-DO-NOT-FLASH.img P480-A3C-init-order-repack.json p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          rm -rf package/archive package/input
+      - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: P480-A3C-LATE-INIT-FIX-FINAL-P479-${{ github.sha }}
+          path: |
+            package/A3C/
+            p480-init-order-audit.json
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90

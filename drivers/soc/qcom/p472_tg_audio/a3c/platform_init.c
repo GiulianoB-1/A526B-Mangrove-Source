@@ -5,10 +5,12 @@
  * and no unported transcode/loopback/HDMI platform initializers.
  */
 #include <linux/kernel.h>
+#include <linux/init.h>
 #include <linux/module.h>
 #include "platform_init.h"
 
-static int __init p480_audio_platform_init(void)
+/* Called only after A2a calibration and A3a Q6 service initialization. */
+int __init p480_audio_platform_init(void)
 {
     int rc;
     rc=msm_compress_dsp_init();
@@ -50,7 +52,8 @@ err_fe:
     pr_err("P480 A3c PART PLATFORM_REGISTER probe rc=%d\n", rc);
     return rc;
 }
-static void __exit p480_audio_platform_exit(void)
+/* Init-only rollback if Kona machine registration cannot complete. */
+void __init p480_audio_platform_exit(void)
 {
     msm_soc_routing_platform_exit();
     msm_pcm_dsp_exit();
@@ -62,7 +65,6 @@ static void __exit p480_audio_platform_exit(void)
     msm_fe_dai_exit();
     msm_compress_dsp_exit();
 }
-module_init(p480_audio_platform_init);
-module_exit(p480_audio_platform_exit);
+/* Built in. No independent initcall: A3a invokes this explicitly. */
 MODULE_DESCRIPTION("P480 native Q6 ASoC providers (no voice)");
 MODULE_LICENSE("GPL v2");

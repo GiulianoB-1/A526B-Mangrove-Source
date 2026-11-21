@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/input.h>
 #include <linux/of_device.h>
 #include <linux/soc/qcom/fsa4480-i2c.h>
@@ -8245,7 +8246,13 @@ static struct platform_driver kona_asoc_machine_driver = {
 	.probe = msm_asoc_machine_probe,
 	.remove = msm_asoc_machine_remove,
 };
-module_platform_driver(kona_asoc_machine_driver);
+/* Defer machine binding until calibration, Q6 and A3c platforms are ready.
+ * module_platform_driver() would execute at the earlier device_initcall level.
+ */
+int __init p480_kona_machine_init(void)
+{
+	return platform_driver_register(&kona_asoc_machine_driver);
+}
 
 MODULE_DESCRIPTION("ALSA SoC msm");
 MODULE_LICENSE("GPL v2");
