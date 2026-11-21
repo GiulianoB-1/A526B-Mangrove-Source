@@ -524,6 +524,11 @@ jobs:
           grep -aFq 'P480 A3c CAL_REGISTER_SKIPPED reason=not_initialized' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c CARD register rc=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c LINK_SKIPPED name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_DIR_TRIM name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_KEPT name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c ROUTES added=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c INIT_FAIL stage=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c ROUTING_REGLESS_WRITE' out_A3C/arch/arm64/boot/Image
           cp out_A3C/.config out_A3C/System.map package/A3C/
           cp p480-init-order-audit.json package/A3C/
           python3 - <<'PY'
@@ -563,7 +568,7 @@ jobs:
             --kernel package/input/A3C.gz \
             --native-image out_A3C/arch/arm64/boot/Image \
             --variant A3C \
-            --output package/A3C/P480-A3C-INIT-ORDER-FINAL-P479-DO-NOT-FLASH.img \
+            --output package/A3C/MANGROVE-P480-A3C-HLT.boot.img \
             --report package/A3C/P480-A3C-init-order-repack.json
           python3 - <<'PY'
           import json
@@ -578,9 +583,63 @@ jobs:
           assert j['flash_authorized'] is False
           print('P480 A3C only, exact real P479 container PASS; NO FLASH')
           PY
+          # Verify marker isolation in the actual repacked kernel versus
+          # the immutable original P479 HLT kernel. Never rebuild or
+          # overwrite the existing P480 NO-A3C fallback artifact.
+          python3 - <<'PY'
+          import gzip, hashlib, json, subprocess
+          from pathlib import Path
+          from ci.p480_boot_repack import parse_boot
+
+          new_boot = Path('package/A3C/MANGROVE-P480-A3C-HLT.boot.img')
+          old_boot = Path('package/input/P479-HLT.boot.img')
+          native = Path('out_A3C/arch/arm64/boot/Image')
+          meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          new = parse_boot(new_boot.read_bytes())
+          old = parse_boot(old_boot.read_bytes())
+          new_kernel = gzip.decompress(new['kernel'])
+          old_kernel = gzip.decompress(old['kernel'])
+          assert new_kernel == native.read_bytes(), 'repack mismatch: kernel not from this build'
+          def strings(data):
+              p = subprocess.run(['strings', '-a'], input=data, capture_output=True, check=True)
+              return p.stdout
+          current = strings(new_kernel)
+          baseline = strings(old_kernel)
+          markers = [
+              b'P480 A3c LINK_DIR_TRIM name=',
+              b'P480 A3c LINK_KEPT name=',
+              b'P480 A3c LINK_SKIPPED name=',
+              b'P480 A3c ROUTES added=',
+              b'P480 A3c INIT_FAIL stage=',
+              b'P480 A3c ROUTING_REGLESS_WRITE',
+          ]
+          assert all(m in current for m in markers), 'missing A3C markers in repacked Image'
+          assert all(m not in baseline for m in markers), 'A3C markers found in pinned P479'
+          assert new['cmdline'] == old['cmdline'] == meta['cmdline']
+          assert not any(x == 'nohlt' or x.startswith('nohlt=') for x in new['cmdline'].split())
+          assert hashlib.sha256(new['dtb']).hexdigest() == meta['original_boot_dtb_sha256']
+          assert hashlib.sha256(new['ramdisk']).hexdigest() == meta['original_ramdisk_sha256']
+          proof = {
+              'scope': 'A3C repacked Image versus the immutable original P479 HLT fallback kernel',
+              'marker_strings_present_only_in_A3C': [m.decode() for m in markers],
+              'original_P479_kernel_has_these_markers': False,
+              'existing_P480_NO_A3C_artifact_unchanged': True,
+              'existing_P480_NO_A3C_artifact_id': 14672521007,
+              'existing_P480_NO_A3C_workflow_run': 44809264636,
+              'existing_P480_NO_A3C_binary_compared_in_this_job': False,
+              'A3C_image_matches_compiled_Image': True,
+              'original_P479_DTB_sha256': meta['original_boot_dtb_sha256'],
+              'original_P479_ramdisk_sha256': meta['original_ramdisk_sha256'],
+              'nohlt_absent': True,
+              'flash_authorized': False,
+          }
+          Path('package/A3C/P480-A3C-strings-proof.json').write_text(json.dumps(proof, indent=2) + '\n')
+          print('A3C_ONLY strings proof PASS; original P479 marker-free; nohlt absent; NO FLASH')
+          PY
           cp ci/P480-test-notes.md package/A3C/
-          echo 'A3C LATE-INIT FIX. NO FLASH UNTIL CLAUDE REVIEWS BOOT-LOOP FIX.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum P480-A3C-INIT-ORDER-FINAL-P479-DO-NOT-FLASH.img P480-A3C-init-order-repack.json p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          cp ci/P480-A3C-DIRECTION-EXPECTED.csv package/A3C/
+          echo 'P480 A3C DPCM direction gate and virtual routing. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P480-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
