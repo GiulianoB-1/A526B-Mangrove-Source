@@ -43322,8 +43322,35 @@ static void p480_routing_destruct(struct snd_soc_component *c,
 	msm_routing_pcm_free(pcm);
 }
 
+/* This is a virtual TG software routing component, not a codec register
+ * file. Its SOC_*_EXT controls keep their genuine get/put handlers and
+ * update the existing routing tables. DAPM mixer initialisation may still
+ * issue component read/write/update_bits calls: treat those virtual
+ * registers as off, without touching hardware or changing mixer state.
+ */
+static unsigned int p480_routing_regless_read(
+	struct snd_soc_component *component, unsigned int reg)
+{
+	return 0;
+}
+
+static int p480_routing_regless_write(
+	struct snd_soc_component *component, unsigned int reg,
+	unsigned int val)
+{
+	/* Diagnostic: the caller's register alone cannot uniquely identify
+	 * an ASoC widget, especially with SND_SOC_NOPM controls.
+	 */
+	dev_info_ratelimited(component->dev,
+			     "P480 A3c ROUTING_REGLESS_WRITE reg=0x%x val=0x%x ignored=1\n",
+			     reg, val);
+	return 0;
+}
+
 static struct snd_soc_component_driver msm_soc_routing_component = {
 	.name		= DRV_NAME,
+	.read		= p480_routing_regless_read,
+	.write		= p480_routing_regless_write,
 	.hw_params = p480_routing_hw_params,
 	.close = p480_routing_close,
 	.prepare = p480_routing_prepare,
