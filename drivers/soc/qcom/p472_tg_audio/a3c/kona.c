@@ -33,7 +33,7 @@
 #include "asoc/wcd-mbhc-v2.h"
 #include "codecs/wcd938x/wcd938x-mbhc.h"
 #include "codecs/wsa881x.h"
-#include "codecs/wsa883x/wsa883x.h"
+/* P480: WSA883x AUX is not ported. Do not include unused static stubs. */
 #include "codecs/wcd938x/wcd938x.h"
 #include "codecs/wcd937x/wcd937x-mbhc.h"
 #include "codecs/wcd937x/wcd937x.h"
