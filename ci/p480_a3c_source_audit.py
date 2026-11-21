@@ -221,6 +221,10 @@ def main() -> None:
               "wcd938x_codec" not in chunk and
               "wcd938x_cdc" not in chunk,
               "A52 TG bolero-only CDC_DMA link " + link)
+    check("static int msm_wsa881x_init(" not in kona_source and
+          "static struct snd_soc_codec_conf *msm_codec_conf;" not in kona_source,
+          "unported WSA AUX callback and stale codec-conf global are absent")
+
     check("aux[i].dlc.of_node = node;" in kona_source and
           '"qcom,codec-aux-devs"' in kona_source and
           "aux[i].init = msm_aux_codec_init;" in kona_source and
