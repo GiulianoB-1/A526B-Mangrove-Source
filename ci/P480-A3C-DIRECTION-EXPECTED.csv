@@ -1,0 +1,13 @@
+link_id,stream_name,mi2s_id,live_rx_lines,live_tx_lines,requested_stream,live_dai_stream_valid,expected_filter_action,expected_log_reason,scope
+LPASS_BE_PRI_MI2S_RX,Primary MI2S Playback,0,0x3,0x0,playback,true,keep,,SOURCE_PREDICTION_ONLY
+LPASS_BE_PRI_MI2S_TX,Primary MI2S Capture,0,0x3,0x0,capture,false,skip,CPU_DAI_NO_CAPTURE,SOURCE_PREDICTION_ONLY
+LPASS_BE_SEC_MI2S_RX,Secondary MI2S Playback,1,0x1,0x0,playback,true,keep,,SOURCE_PREDICTION_ONLY
+LPASS_BE_SEC_MI2S_TX,Secondary MI2S Capture,1,0x1,0x0,capture,false,skip,CPU_DAI_NO_CAPTURE,SOURCE_PREDICTION_ONLY
+LPASS_BE_TERT_MI2S_RX,Tertiary MI2S Playback,2,0x0,0x3,playback,false,skip,CPU_DAI_NO_PLAYBACK,SOURCE_PREDICTION_ONLY
+LPASS_BE_TERT_MI2S_TX,Tertiary MI2S Capture,2,0x0,0x3,capture,true,keep,,SOURCE_PREDICTION_ONLY
+LPASS_BE_QUAT_MI2S_RX,Quaternary MI2S Playback,3,0x1,0x2,playback,true,keep_if_dai_resolves,,SOURCE_PREDICTION_ONLY
+LPASS_BE_QUAT_MI2S_TX,Quaternary MI2S Capture,3,0x1,0x2,capture,true,keep_if_dai_resolves,,SOURCE_PREDICTION_ONLY
+LPASS_BE_QUIN_MI2S_RX,Quinary MI2S Playback,4,0x1,0x2,playback,true,skip,TAS_NOT_PORTED,SOURCE_PREDICTION_ONLY
+LPASS_BE_QUIN_MI2S_TX,Quinary MI2S Capture,4,0x1,0x2,capture,true,skip,TAS_NOT_PORTED,SOURCE_PREDICTION_ONLY
+LPASS_BE_SENARY_MI2S_RX,Senary MI2S Playback,5,0x0,0x3,playback,false,skip,CPU_DAI_NO_PLAYBACK,SOURCE_PREDICTION_ONLY
+LPASS_BE_SENARY_MI2S_TX,Senary MI2S Capture,5,0x0,0x3,capture,true,keep_if_dai_resolves,,SOURCE_PREDICTION_ONLY
