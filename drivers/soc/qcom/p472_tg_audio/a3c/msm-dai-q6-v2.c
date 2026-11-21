@@ -7022,7 +7022,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Primary MI2S Playback",
-			.aif_name = "PRI_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7038,7 +7038,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Primary MI2S Capture",
-			.aif_name = "PRI_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7057,7 +7057,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Secondary MI2S Playback",
-			.aif_name = "SEC_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7069,7 +7069,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Secondary MI2S Capture",
-			.aif_name = "SEC_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7088,7 +7088,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Tertiary MI2S Playback",
-			.aif_name = "TERT_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7100,7 +7100,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Tertiary MI2S Capture",
-			.aif_name = "TERT_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7119,7 +7119,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Quaternary MI2S Playback",
-			.aif_name = "QUAT_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7131,7 +7131,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Quaternary MI2S Capture",
-			.aif_name = "QUAT_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_11025 |
 				 SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_22050 |
 				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |
@@ -7150,7 +7150,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Quinary MI2S Playback",
-			.aif_name = "QUIN_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_96000 |
 			SNDRV_PCM_RATE_192000,
@@ -7160,7 +7160,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Quinary MI2S Capture",
-			.aif_name = "QUIN_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7176,7 +7176,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Senary MI2S Playback",
-			.aif_name = "SEN_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7185,7 +7185,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "Senary MI2S Capture",
-			.aif_name = "SENARY_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7201,7 +7201,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "Secondary MI2S Playback SD1",
-			.aif_name = "SEC_MI2S_RX_SD1",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7213,7 +7213,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT0 MI2S Playback",
-			.aif_name = "INT0_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_44100 |
 			SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_192000,
@@ -7225,7 +7225,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT0 MI2S Capture",
-			.aif_name = "INT0_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7241,7 +7241,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT1 MI2S Playback",
-			.aif_name = "INT1_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
@@ -7252,7 +7252,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT1 MI2S Capture",
-			.aif_name = "INT1_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7268,7 +7268,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT2 MI2S Playback",
-			.aif_name = "INT2_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
@@ -7279,7 +7279,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT2 MI2S Capture",
-			.aif_name = "INT2_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7295,7 +7295,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT3 MI2S Playback",
-			.aif_name = "INT3_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
@@ -7306,7 +7306,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT3 MI2S Capture",
-			.aif_name = "INT3_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7322,7 +7322,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT4 MI2S Playback",
-			.aif_name = "INT4_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_96000 |
 			SNDRV_PCM_RATE_192000,
@@ -7334,7 +7334,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT4 MI2S Capture",
-			.aif_name = "INT4_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7350,7 +7350,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT5 MI2S Playback",
-			.aif_name = "INT5_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
@@ -7361,7 +7361,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT5 MI2S Capture",
-			.aif_name = "INT5_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
@@ -7377,7 +7377,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 	{
 		.playback = {
 			.stream_name = "INT6 MI2S Playback",
-			.aif_name = "INT6_MI2S_RX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE |
@@ -7388,7 +7388,7 @@ static struct snd_soc_dai_driver msm_dai_q6_mi2s_dai[] = {
 		},
 		.capture = {
 			.stream_name = "INT6 MI2S Capture",
-			.aif_name = "INT6_MI2S_TX",
+
 			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_8000 |
 			SNDRV_PCM_RATE_16000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
