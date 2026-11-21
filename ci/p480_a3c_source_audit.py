@@ -282,6 +282,49 @@ def main() -> None:
           "p480_audio_platform_exit();" in a3a_init,
           "A3c registration failures log stage and retain the A3a Q6 stack")
 
+    # Fix 3: the skipped WSA link used to own all of TG's bolero RX init.
+    check("rx0->init = msm_int_audrx_init;" in kona_source and
+          "wsa_init_skipped" in kona_source and
+          "if (init_count || !rx0 || rx0->init)" in kona_source and
+          "P480 A3c INIT_MOVED fn=msm_int_audrx_init" in kona_source and
+          "pdata->rx_init_started = true;" in kona_source and
+          "pdata->codec_reg_done = true;" in kona_source and
+          "msm_aux_dev[" not in kona_source,
+          "real TG RX init moved once on the probe-owned copy and per-card state")
+    check("CFLAGS_kona.o += -DCONFIG_SND_SOC_BOLERO=1" in card_make and
+          "bolero_get_device_ptr(component->dev, WSA_MACRO)" in kona_source and
+          "P480 A3c WSA_INIT_SKIPPED reason=MACRO_NOT_PRESENT" in kona_source and
+          all("P480 A3c PORT_MAP=" + x in kona_source for x in
+              ("sm_port_map", "sm_port_map_v2", "wcd937x")),
+          "genuine A3b bolero calls, WSA gated, TG port map branches")
+    check("static int p480_filter_wcd938x_routes(" in kona_source and
+          "snd_soc_find_dai_with_mutex(&card->aux_dev[i].dlc)" in kona_source and
+          "if (!has_wcd938x || has_wcd937x)" in kona_source and
+          "p480_legacy_adc_output(route->sink)" in kona_source and
+          "p480_legacy_adc_output(route->source)" in kona_source and
+          "reason=WCD937X_ONLY_WIDGET" in kona_source and
+          "P480 A3c ROUTE_KEPT sink=" in kona_source and
+          "P480 A3c ROUTES kept=%d skipped=%d" in kona_source and
+          "card->disable_route_checks = true" not in kona_source and
+          kona_source.index("msm_init_aux_dev(pdev, card);") <
+          kona_source.index("p480_filter_wcd938x_routes(card);") <
+          kona_source.index("devm_snd_soc_register_card(&pdev->dev, card);"),
+          "only exact unsupported ADC route endpoints removed for real WCD938x")
+    check("P480 A3c KCONTROLS count=%d" in kona_source and
+          "card->snd_card->controls_count" in kona_source,
+          "actual registered ALSA control count")
+    import csv
+    import io
+    live_routes = json.loads(read("ci/P480-live-r02-merged-sound-evidence.json"))["routing_pairs"]
+    route_rows = list(csv.DictReader(io.StringIO(read("ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv"))))
+    exact_adc = {"ADC1_OUTPUT", "ADC2_OUTPUT", "ADC3_OUTPUT", "ADC4_OUTPUT"}
+    check(len(live_routes) == len(route_rows) == 27 and
+          [(r["sink"], r["source"]) for r in route_rows] == [tuple(x) for x in live_routes] and
+          sum(r["predicted_action_if_only_wcd938x"] == "skip" for r in route_rows) == 8 and
+          all((r["predicted_action_if_only_wcd938x"] == "skip") ==
+              (r["sink"] in exact_adc or r["source"] in exact_adc) for r in route_rows),
+          "exact 27 live r02 pairs, expected 19 retained and eight ADC skips")
+
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
     read("ci/p480_p479_boot_repack.py")
