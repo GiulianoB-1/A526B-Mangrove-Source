@@ -73,7 +73,9 @@ struct msm_dai_auxpcm_pdata {
 };
 
 struct msm_mi2s_pdata {
-	u16 sd_lines;
+	/* TG A52 has separate receive/transmit serial-data masks. */
+	u16 rx_sd_lines;
+	u16 tx_sd_lines;
 	u16 intf_id;
 };
 
