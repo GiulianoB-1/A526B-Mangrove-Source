@@ -7988,8 +7988,12 @@ static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
 			snd_soc_find_dai_with_mutex(&card->aux_dev[i].dlc);
 		const char *driver;
 
-		if (!dai || !dai->component || !dai->component->driver)
+		if (!dai || !dai->component || !dai->component->driver) {
+			dev_warn(card->dev,
+				 "P480 A3c DEFER_MISSING kind=AUX_CODEC index=%d node=%pOF\n",
+				 i, card->aux_dev[i].dlc.of_node);
 			return -EPROBE_DEFER;
+		}
 		driver = dai->component->driver->name;
 		if (driver && !strncmp(driver, "wcd938x", 7))
 			has_wcd938x = true;
@@ -8003,8 +8007,12 @@ static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
 						&card->dai_link[i].codecs[j]);
 			const char *driver;
 
-			if (!dai || !dai->component || !dai->component->driver)
+			if (!dai || !dai->component || !dai->component->driver) {
+				dev_warn(card->dev,
+					 "P480 A3c DEFER_MISSING link=%s kind=CODEC index=%d\n",
+					 card->dai_link[i].name, j);
 				return -EPROBE_DEFER;
+			}
 			driver = dai->component->driver->name;
 			if (driver && !strncmp(driver, "wcd937x", 7))
 				has_wcd937x = true;
@@ -8200,6 +8208,23 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	ret = p480_filter_wcd938x_routes(card);
 	if (ret)
 		goto err;
+
+	/* On the real lito card, exactly one retained link must own the
+	 * TG RX initialization even after direction trimming.
+	 */
+	if (!strcmp(card->name, "lito-lagoonmtp-snd-card")) {
+		int i, count = 0;
+
+		for (i = 0; i < card->num_links; i++)
+			if (card->dai_link[i].init == msm_int_audrx_init)
+				count++;
+		if (count != 1) {
+			dev_err(card->dev, "P480 A3c RX_INIT_LINK_COUNT_INVALID count=%d\n",
+				count);
+			ret = -EINVAL;
+			goto err;
+		}
+	}
 
 	/* Fail closed on missing route widgets. A successful registration
 	 * means the ASoC core accepted all DT routes.
