@@ -1,0 +1,18 @@
+{
+  "schema": "P480-A3C-TG-TOPOLOGY-FIX-v1",
+  "base_hardware_commit": "86379327c624d028d146ed4e186fcbce51115b9f",
+  "mi2s_six_probes_passed_before_fix": true,
+  "card_registered_before_fix": false,
+  "old_links": 54,
+  "old_skipped": 36,
+  "donor_commit": "6bf351bdf18bdb228db79e66f14a7a9c0178e5d7",
+  "topology": "TG Lito WCD938x as OF-linked AUX and bolero-only CDC_DMA; TG duplex MI2S per interface",
+  "porting_exception": "Dropped TG .aif_name because Linux 5.10 snd_soc_pcm_stream has no such field",
+  "runtime_cpu_matching": "of_node from qcom,msm-dai-q6-mi2s-dev-id and true compatible, no dev_set_name",
+  "quinary_mi2s": "TAS_NOT_PORTED",
+  "optional_quat_senary": "MI2S_CPU_DAI_UNRESOLVED if CPU missing",
+  "requested_variant": "A3C_ONLY",
+  "flash_authorized": false,
+  "post_fix_hardware_validated": false,
+  "claude_review_complete": false
+}
