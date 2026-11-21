@@ -171,6 +171,32 @@ def main() -> None:
           "P480 A3c PLATFORM_SKIPPED reason=a3a_services_failed" in a3a_init,
           "calibration and Q6 fail-closed ordering gates")
 
+    # P480 A3c hardware follow-up: TG has independent RX/TX SD lines.
+    mi2s_source = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-dai-q6-v2.c")
+    mi2s_header = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-dai-q6-v2.h")
+    check('"qcom,msm-mi2s-rx-lines"' in mi2s_source and
+          '"qcom,msm-mi2s-tx-lines"' in mi2s_source and
+          '"qcom,msm-mi2s-lines"' not in mi2s_source and
+          "msm_dai_q6_mi2s_get_lineconfig(pdata->rx_sd_lines" in mi2s_source and
+          "msm_dai_q6_mi2s_get_lineconfig(pdata->tx_sd_lines" in mi2s_source and
+          "u16 rx_sd_lines;" in mi2s_header and
+          "u16 tx_sd_lines;" in mi2s_header,
+          "A52 TG MI2S RX/TX DT properties and direction-specific line config")
+    check("p480_copy_card_links" in kona_source and
+          kona_source.count("devm_kmemdup(") >= 5 and
+          "p480_platform_is_ported" in kona_source and
+          "p480_log_deferred_components(card);" in kona_source and
+          "if (codec_reg_done)" not in kona_source and
+          kona_source.index("p480_filter_links(card);") <
+          kona_source.index("msm_populate_dai_link_component_of_node(card);") <
+          kona_source.index("devm_snd_soc_register_card(&pdev->dev, card);"),
+          "Kona fresh card/link/CPU/codec/platform arrays on retry; filter before DT resolution")
+    check("a3c_nonfatal:" in a3a_init and
+          a3a_init.count("goto a3c_nonfatal;") == 2 and
+          "goto undo_lsm;" not in a3a_init and
+          "schedule_delayed_work(&p472_a3a_version_job" in a3a_init,
+          "A3c registration failure preserves A3a Q6 services")
+
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
     read("ci/p480_p479_boot_repack.py")
