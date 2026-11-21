@@ -7035,6 +7035,43 @@ static int msm_populate_dai_link_component_of_node(
 			}
 		}
 
+		/* The TG links name CPU interfaces 0..5. On Linux 5.10 the
+		 * actual registered device may be named "soc:qcom,...", so
+		 * resolve the *real* compatible OF node by its interface ID.
+		 * Unlike dev_set_name(), this does not mutate sysfs devices.
+		 */
+		if (dai_link[i].cpus->dai_name &&
+		    !dai_link[i].cpus->of_node &&
+		    !strncmp(dai_link[i].cpus->dai_name,
+			     "msm-dai-q6-mi2s.", 16)) {
+			struct device_node *candidate;
+			unsigned int want_id;
+
+			if (!kstrtouint(dai_link[i].cpus->dai_name + 16,
+					10, &want_id) && want_id < 6) {
+				for_each_compatible_node(candidate, NULL,
+							 "qcom,msm-dai-q6-mi2s") {
+					u32 candidate_id;
+
+					if (!of_device_is_available(candidate) ||
+					    of_property_read_u32(candidate,
+						"qcom,msm-dai-q6-mi2s-dev-id",
+						&candidate_id) ||
+					    candidate_id != want_id)
+						continue;
+
+					dai_link[i].cpus->of_node = candidate;
+					dai_link[i].cpus->dai_name = NULL;
+					dev_info(cdev,
+						 "P480 A3c MI2S_CPU_OF link=%s id=%u node=%pOF\n",
+						 dai_link[i].name,
+						 want_id, candidate);
+					/* Keep this OF ref while the card uses it. */
+					break;
+				}
+			}
+		}
+
 		/* populate codec_of_node for snd card dai links */
 		if (dai_link[i].codecs->name && !dai_link[i].codecs->of_node) {
 			index = of_property_match_string(cdev->of_node,
