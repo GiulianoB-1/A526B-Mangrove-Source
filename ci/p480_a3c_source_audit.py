@@ -322,6 +322,26 @@ def main() -> None:
           "A3C_only_config_difference" in package and
           "source_control_is_55bab_repair_not_original_P479" in package,
           "P479 control and changed PIL/SSR ABI are reported")
+    expected = read("ci/P480-A3C-DIRECTION-EXPECTED.csv")
+    for name, why in (
+            ("Primary MI2S Capture", "CPU_DAI_NO_CAPTURE"),
+            ("Secondary MI2S Capture", "CPU_DAI_NO_CAPTURE"),
+            ("Tertiary MI2S Playback", "CPU_DAI_NO_PLAYBACK"),
+            ("Senary MI2S Playback", "CPU_DAI_NO_PLAYBACK")):
+        check(any(name in line and why in line and "SOURCE_PREDICTION_ONLY" in line
+                  for line in expected.splitlines()),
+              "live-r02 source-only predicted MI2S skip: " + name)
+    check("MANGROVE-P480-A3C-HLT.boot.img" in package and
+          "P480-A3C-strings-proof.json" in package and
+          "P480 A3c LINK_DIR_TRIM name=" in package and
+          "P480 A3c ROUTES added=" in package and
+          "original_P479_DTB_sha256" in package and
+          "original_P479_ramdisk_sha256" in package and
+          "nohlt_absent" in package and
+          "existing_P480_NO_A3C_binary_compared_in_this_job" in package and
+          "existing_P480_NO_A3C_artifact_id" in package and
+          "existing_P480_NO_A3C_artifact_unchanged" in package,
+          "one A3C HLT output with strings/pins and explicit unchanged NO-A3C fallback")
     print("P480 A3c source-only integration contracts PASS; no hardware validation")
 
 
