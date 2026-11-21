@@ -177,8 +177,8 @@ def main() -> None:
     check('"qcom,msm-mi2s-rx-lines"' in mi2s_source and
           '"qcom,msm-mi2s-tx-lines"' in mi2s_source and
           '"qcom,msm-mi2s-lines"' not in mi2s_source and
-          "msm_dai_q6_mi2s_get_lineconfig(pdata->rx_sd_lines" in mi2s_source and
-          "msm_dai_q6_mi2s_get_lineconfig(pdata->tx_sd_lines" in mi2s_source and
+          "msm_dai_q6_mi2s_get_lineconfig(mi2s_pdata->rx_sd_lines" in mi2s_source and
+          "msm_dai_q6_mi2s_get_lineconfig(mi2s_pdata->tx_sd_lines" in mi2s_source and
           "u16 rx_sd_lines;" in mi2s_header and
           "u16 tx_sd_lines;" in mi2s_header,
           "A52 TG MI2S RX/TX DT properties and direction-specific line config")
@@ -196,6 +196,44 @@ def main() -> None:
           "goto undo_lsm;" not in a3a_init and
           "schedule_delayed_work(&p472_a3a_version_job" in a3a_init,
           "A3c registration failure preserves A3a Q6 services")
+
+    # TG A52 duplex MI2S and AUX WCD938x must not regress to SM7325.
+    dailink = read("drivers/soc/qcom/p472_tg_audio/a3c/msm_dailink.h")
+    mi2s_names = ("Primary", "Secondary", "Tertiary", "Quaternary",
+                  "Quinary", "Senary")
+    for name in mi2s_names:
+        check(('.name = "' + name + ' MI2S"') in mi2s_source,
+              "TG duplex MI2S DAI: " + name)
+    for idx, prefix in enumerate(("pri", "sec", "tert", "quat", "quin", "sen")):
+        for direction in ("rx", "tx"):
+            start = dailink.index("SND_SOC_DAILINK_DEFS(" +
+                                  prefix + "_mi2s_" + direction + ",")
+            chunk = dailink[start:start + 240]
+            check('COMP_CPU("msm-dai-q6-mi2s.' + str(idx) + '")' in chunk,
+                  "TG MI2S CPU ID " + prefix + "/" + direction)
+    for link in ("rx_dma_rx0", "rx_dma_rx1", "rx_dma_rx2",
+                 "rx_dma_rx3", "tx_dma_tx3", "tx_dma_tx4",
+                 "va_dma_tx0", "va_dma_tx1", "va_dma_tx2"):
+        start = dailink.index("SND_SOC_DAILINK_DEFS(" + link + ",")
+        end = dailink.index(");", start)
+        chunk = dailink[start:end]
+        check('COMP_CODEC("bolero_codec", "' in chunk and
+              "wcd938x_codec" not in chunk and
+              "wcd938x_cdc" not in chunk,
+              "A52 TG bolero-only CDC_DMA link " + link)
+    check("aux[i].dlc.of_node = node;" in kona_source and
+          '"qcom,codec-aux-devs"' in kona_source and
+          "aux[i].init = msm_aux_codec_init;" in kona_source and
+          "p480_filter_optional_mi2s(card);" in kona_source and
+          "MI2S_CPU_OF link=" in kona_source and
+          "TAS_NOT_PORTED" in kona_source and
+          "MI2S_CPU_DAI_UNRESOLVED" in kona_source,
+          "WCD938x AUX path, true OF CPU matching and safe optional MI2S")
+    check("struct msm_dai_q6_mi2s_dai_config tx_dai;" in mi2s_source and
+          "struct msm_dai_q6_mi2s_dai_config rx_dai;" in mi2s_source and
+          "MI2S_DAI_REGISTER device=" in mi2s_source and
+          "MSM_PRIM_MI2S_RX" not in mi2s_header,
+          "TG duplex RX/TX DAI state and diagnostics")
 
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
