@@ -130,7 +130,7 @@ fi
 if [ -f "$OUT/kernel_audio_messages.txt" ]; then
   grep -E 'P480 A3c (LINK_KEPT |LINK_SKIPPED |LINK_DIR_TRIM |INIT_MOVED |CARD register )' \
     "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_link_attempts.txt" || true
-  grep -E 'P480 A3c (ROUTE_KEPT |ROUTE_SKIPPED |ROUTES |INIT_MOVED |PORT_MAP=|AUDRX_INIT |WSA_INIT_SKIPPED |CARD register |CARD_NUMBER |DEVICES |KCONTROLS )' \
+  grep -E 'P480 A3c (ROUTE_KEPT |ROUTE_SKIPPED |ROUTES |INIT_MOVED |PORT_MAP=|AUDRX_INIT |WSA_INIT_SKIPPED |CARD register |SND_CARD_REGISTER |CARD_NUMBER |DEVICES |KCONTROLS )' \
     "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_route_attempts.txt" || true
 fi
 
