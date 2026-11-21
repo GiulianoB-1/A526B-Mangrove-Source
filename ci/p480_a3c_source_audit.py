@@ -318,12 +318,42 @@ def main() -> None:
     live_routes = json.loads(read("ci/P480-live-r02-merged-sound-evidence.json"))["routing_pairs"]
     route_rows = list(csv.DictReader(io.StringIO(read("ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv"))))
     exact_adc = {"ADC1_OUTPUT", "ADC2_OUTPUT", "ADC3_OUTPUT", "ADC4_OUTPUT"}
+    exact_bias = {
+        ("MIC BIAS1", "Analog Mic1"),
+        ("MIC BIAS2", "Analog Mic2"),
+        ("MIC BIAS3", "Analog Mic3"),
+        ("MIC BIAS3", "Analog Mic4"),
+        ("MIC BIAS4", "Analog Mic5"),
+    }
+    helper = kona_source.split("static bool p480_invalid_micbias_route(", 1)[1].split("\nstatic int ", 1)[0]
+    check(set(re.findall(r'\{"([^"]+)", "([^"]+)"\}', helper)) == exact_bias and
+          len(re.findall(r'\{"([^"]+)", "([^"]+)"\}', helper)) == 5 and
+          "!strcmp(route->sink, pairs[i][0])" in helper and
+          "!strcmp(route->source, pairs[i][1])" in helper and
+          "if (p480_invalid_micbias_route(route))" in kona_source and
+          "reason=SUPPLY_SINK_FROM_NON_SUPPLY" in kona_source,
+          "Fix 4 exact five directed mic-to-supply exclusions, not a cross-product")
+    def expected_route_reason(r):
+        if r["sink"] in exact_adc or r["source"] in exact_adc:
+            return "WCD937X_ONLY_WIDGET"
+        if (r["sink"], r["source"]) in exact_bias:
+            return "SUPPLY_SINK_FROM_NON_SUPPLY"
+        return "STRICT_ASOC_VALIDATION"
     check(len(live_routes) == len(route_rows) == 27 and
           [(r["sink"], r["source"]) for r in route_rows] == [tuple(x) for x in live_routes] and
-          sum(r["predicted_action_if_only_wcd938x"] == "skip" for r in route_rows) == 8 and
-          all((r["predicted_action_if_only_wcd938x"] == "skip") ==
-              (r["sink"] in exact_adc or r["source"] in exact_adc) for r in route_rows),
-          "exact 27 live r02 pairs, expected 19 retained and eight ADC skips")
+          sum(r["predicted_action_if_only_wcd938x"] == "skip" for r in route_rows) == 13 and
+          all(r["reason"] == expected_route_reason(r) and
+              (r["predicted_action_if_only_wcd938x"] == "skip") ==
+              (expected_route_reason(r) != "STRICT_ASOC_VALIDATION") for r in route_rows),
+          "exact 27 r02 pairs: 14 expected retained, 8 ADC skips and 5 supply skips")
+    core = read("sound/soc/soc-core.c")
+    check("ret = snd_card_register(card->snd_card);\n#ifdef CONFIG_P480_A3C" in core and
+          'of_device_is_compatible(card->dev->of_node, "qcom,kona-asoc-snd")' in core and
+          "P480 A3c SND_CARD_REGISTER rc=%d" in core and
+          "card->snd_card->shortname" in kona_source and
+          "card->snd_card->id" in kona_source and
+          "card->snd_card->driver" in kona_source,
+          "A3C-only actual ALSA registration rc and proc card identity")
 
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
