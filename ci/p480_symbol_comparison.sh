@@ -42,16 +42,40 @@ make -C "$base" O="$PWD/out_BASELINE" ARCH=arm64 \
 # Persist the true diff, rather than changing the immutable source.
 diff -u "$base/ci/build.config" out_BASELINE/.config \
   > "$report_dir/A-P479-original-config-vs-pure-baseline-built.diff" || test "$?" -eq 1
-echo 'Building immutable P479 baseline with unmodified source.'
-make -C "$base" O="$PWD/out_BASELINE" ARCH=arm64 \
-  CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- \
-  LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
-
-test -s out_BASELINE/vmlinux
-test -s out_BASELINE/System.map
-test -s out_BASELINE/.config
-grep -aFq 'P479 H4 CABLE type=' out_BASELINE/arch/arm64/boot/Image
-grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' out_BASELINE/System.map
+# First compile the known-broken original PIL unit. This is an honest
+# pristine-source test: no header edits, no replacement object, no hidden patch.
+# If the unit fails, A cannot produce vmlinux and B bloat-o-meter is impossible.
+baseline_linked=0
+echo 'Testing untouched P479 PIL header ABI before the expensive full build.'
+if make -C "$base" O="$PWD/out_BASELINE" ARCH=arm64 \
+    CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- \
+    LLVM=1 LLVM_IAS=1 drivers/a52_pil/subsys-pil-tz.o \
+    > "$report_dir/A-P479-pristine-PIL-compile.log" 2>&1; then
+  echo 'The pristine P479 PIL unit compiled; attempt the full original build.'
+  if make -C "$base" O="$PWD/out_BASELINE" ARCH=arm64 \
+      CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- \
+      LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux \
+      > "$report_dir/A-P479-pristine-link.log" 2>&1; then
+    baseline_linked=1
+  else
+    echo 'P479 baseline failed to link; retaining unmodified source and compiler log.'
+    tail -n 45 "$report_dir/A-P479-pristine-link.log"
+  fi
+else
+  echo 'P479 pristine baseline fails native compilation, as Claude predicted.'
+  grep -E 'error:|[0-9]+ errors generated' "$report_dir/A-P479-pristine-PIL-compile.log" | tail -n 25 || true
+fi
+if [ "$baseline_linked" = 1 ]; then
+  test -s out_BASELINE/vmlinux
+  test -s out_BASELINE/System.map
+  test -s out_BASELINE/.config
+  grep -aFq 'P479 H4 CABLE type=' out_BASELINE/arch/arm64/boot/Image
+  grep -Eq '[[:space:]]p479_h4_tick([.][^[:space:]]+)?$' out_BASELINE/System.map
+else
+  printf '%s\n' \
+    'NOT_AVAILABLE: pristine P479 baseline did not compile; A original System.map and B bloat-o-meter cannot be produced without changing baseline source.' \
+    > "$report_dir/A-B-PRISTINE-P479-BUILD-BLOCKED.txt"
+fi
 git -C "$base" diff --quiet
 git -C "$base" diff --cached --quiet
 
@@ -109,11 +133,14 @@ maps={}
 for name,folder in [
     ("P479_BASELINE","out_BASELINE"),("P479_55babd9","out_CONTROL"),
     ("P480_NO_A3C","out_NO-A3C"),("P480_A3C","out_A3C")]:
+    complete=all(Path(f"{folder}/{filename}").is_file() for filename in
+                 ("System.map","vmlinux","arch/arm64/boot/Image"))
     maps[name]={
-        "System_map_sha256":sha(f"{folder}/System.map"),
-        "matches_original_P479_System_map":sha(f"{folder}/System.map")==ref_map,
-        "vmlinux_sha256":sha(f"{folder}/vmlinux"),
-        "Image_sha256":sha(f"{folder}/arch/arm64/boot/Image"),
+        "linked_vmlinux_available":complete,
+        "System_map_sha256":sha(f"{folder}/System.map") if complete else None,
+        "matches_original_P479_System_map":(sha(f"{folder}/System.map")==ref_map) if complete else None,
+        "vmlinux_sha256":sha(f"{folder}/vmlinux") if complete else None,
+        "Image_sha256":sha(f"{folder}/arch/arm64/boot/Image") if complete else None,
     }
 (r/"P479-config-and-System-map.json").write_text(json.dumps({
     "original_P479_System_map_sha256":ref_map,
@@ -127,6 +154,7 @@ for name,folder in [
 print("P479 original System.map SHA256:",ref_map)
 print("Built pure baseline System.map SHA256:",maps["P479_BASELINE"]["System_map_sha256"])
 print("Does pure baseline match original P479:",maps["P479_BASELINE"]["matches_original_P479_System_map"])
+print("Pristine baseline has linkable vmlinux:",maps["P479_BASELINE"]["linked_vmlinux_available"])
 print("Expected three config flags only:",config["expected_only_three_generated_flags"])
 print("Pure baseline olddefconfig three flags only:",config["pure_baseline_has_same_three_only"])
 print("55babd9 versus NO-A3C config identical:",config["55babd9_vs_no_a3c_exact"])
@@ -135,8 +163,14 @@ PY
 
 # Bloat-o-meter reads linked vmlinux symbol sizes using nm. -c separates
 # text, data and read-only data. These files contain the FULL output.
-python3 scripts/bloat-o-meter -c out_BASELINE/vmlinux out_CONTROL/vmlinux \
-  > "$report_dir/B-P479-baseline-vs-55babd9.bloat.txt"
+if [ "$baseline_linked" = 1 ]; then
+  python3 scripts/bloat-o-meter -c out_BASELINE/vmlinux out_CONTROL/vmlinux \
+    > "$report_dir/B-P479-baseline-vs-55babd9.bloat.txt"
+else
+  printf '%s\n' \
+    'B NOT_AVAILABLE: pristine P479 baseline fails compilation before linking. No bloat-o-meter symbols exist. Do not substitute patched baseline.' \
+    > "$report_dir/B-P479-baseline-vs-55babd9.NOT-AVAILABLE.txt"
+fi
 python3 scripts/bloat-o-meter -c out_CONTROL/vmlinux out_NO-A3C/vmlinux \
   > "$report_dir/C-55babd9-vs-P480-NO-A3C.bloat.txt"
 python3 scripts/bloat-o-meter -c out_NO-A3C/vmlinux out_A3C/vmlinux \
@@ -155,6 +189,19 @@ files={
 }
 result={}
 for kind,p in files.items():
+    if not p.is_file():
+        if kind != "B":
+            raise RuntimeError(f"Missing required {kind} bloat-o-meter output")
+        result[kind]={
+            "comparison":"pure baseline vs repaired 55babd9",
+            "status":"NOT_AVAILABLE_PRISTINE_P479_DOES_NOT_COMPILE",
+            "reason":"Missing IRQ-handler fields and mismatched subsystem_restart ABI in unmodified subsys-pil-tz.c",
+            "changed_symbol_sizes":None,
+            "sections":None,"symbols":None,
+            "interpretation":"UNVERIFIED_CANNOT_APPROVE",
+            "flash_authorized":False,
+        }
+        continue
     sections={"Function":[],"Data":[],"RO Data":[]}
     section=None
     for line in p.read_text().splitlines():
@@ -171,6 +218,7 @@ for kind,p in files.items():
                 })
     changed=sum(len(v) for v in sections.values())
     result[kind]={
+        "status":"ACTUAL_BLOAT_O_METER_RESULT",
         "comparison":{
            "B":"pure baseline vs repaired 55babd9",
            "C":"repaired 55babd9 vs P480 NO-A3C",
@@ -193,8 +241,8 @@ with open(__import__('os').environ["GITHUB_STEP_SUMMARY"],"a") as s:
     s.write("| Comparison | Changed-size symbols | Interpretation |\n|---|---:|---|\n")
     for k,v in result.items():
         s.write(f"| {k}: {v['comparison']} | {v['changed_symbol_sizes']} | {v['interpretation']} |\n")
-    s.write("\nAll raw outputs and the full .config diffs are uploaded for Claude review. NO FLASH.\n")
+    s.write("\nB remains unavailable if pristine P479 does not link. Two actual bloat reports plus all config diffs and compiler errors are uploaded. NO FLASH.\n")
 PY
 
 (cd "$report_dir" && sha256sum *.txt *.json *.diff > SHA256SUMS && sha256sum -c SHA256SUMS)
-echo 'All three full Linux bloat-o-meter reports generated. NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
+echo 'Bloat evidence generated for linkable source pairs; pure P479 failure documented. NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
