@@ -347,7 +347,7 @@ struct msm_dai_q6_mi2s_dai_config {
 
 struct msm_dai_q6_mi2s_dai_data {
 	u32 is_island_dai;
-	/* TG uses one duplex DAI with independent RX/TX port configs. */
+	/* TG duplex MI2S, each direction has independent AFE state. */
 	struct msm_dai_q6_mi2s_dai_config tx_dai;
 	struct msm_dai_q6_mi2s_dai_config rx_dai;
 };
@@ -6399,7 +6399,12 @@ static const struct snd_kcontrol_new mi2s_config_controls[] = {
 };
 
 static const struct snd_kcontrol_new mi2s_vi_feed_controls[] = {
-	SOC_ENUM_EXT("INT5 MI2S VI MONO", static int msm_dai_q6_dai_mi2s_probe(struct snd_soc_dai *dai)
+	SOC_ENUM_EXT("INT5 MI2S VI MONO", mi2s_config_enum[1],
+		     msm_dai_q6_mi2s_vi_feed_mono_get,
+		     msm_dai_q6_mi2s_vi_feed_mono_put),
+};
+
+static int msm_dai_q6_dai_mi2s_probe(struct snd_soc_dai *dai)
 {
 	struct msm_dai_q6_mi2s_dai_data *mi2s_dai_data =
 			dev_get_drvdata(dai->dev);
@@ -7727,10 +7732,6 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 
 	rc = snd_soc_register_component(&pdev->dev, &msm_q6_mi2s_dai_component,
 	&msm_dai_q6_mi2s_dai[mi2s_intf], 1);
-	/* Device name in the 5.10 platform bus need not match TG's 4.19
-	 * name. The Kona link resolves its CPU via the DT's of_node.
-	 * The TG registered DAI driver name and both stream maxima matter.
-	 */
 	dev_info(&pdev->dev,
 		 "P480 A3c MI2S_DAI_REGISTER device=%s id=%u dai=%s playback_max=%u capture_max=%u rc=%d\n",
 		 dev_name(&pdev->dev), mi2s_intf,
@@ -7752,12 +7753,6 @@ rtn:
 }
 
 static int msm_dai_q6_mi2s_dev_remove(struct platform_device *pdev)
-{
-	snd_soc_unregister_component(&pdev->dev);
-	return 0;
-}
-
-q6_mi2s_dev_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_component(&pdev->dev);
 	return 0;
