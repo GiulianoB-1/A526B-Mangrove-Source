@@ -898,7 +898,6 @@ static SOC_ENUM_SINGLE_EXT_DECL(afe_loopback_tx_chs, afe_loopback_tx_ch_text);
 static bool is_initial_boot;
 static bool codec_reg_done;
 static struct snd_soc_aux_dev *msm_aux_dev;
-static struct snd_soc_codec_conf *msm_codec_conf;
 static struct snd_soc_card snd_soc_card_kona_msm;
 static int dmic_0_1_gpio_cnt;
 static int dmic_2_3_gpio_cnt;
@@ -7414,87 +7413,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	return NULL;
 }
 
-static int msm_wsa881x_init(struct snd_soc_component *component)
-{
-	u8 spkleft_ports[WSA881X_MAX_SWR_PORTS] = {0, 1, 2, 3};
-	u8 spkright_ports[WSA881X_MAX_SWR_PORTS] = {0, 1, 2, 3};
-	u8 spkleft_port_types[WSA881X_MAX_SWR_PORTS] = {SPKR_L, SPKR_L_COMP,
-						SPKR_L_BOOST, SPKR_L_VI};
-	u8 spkright_port_types[WSA881X_MAX_SWR_PORTS] = {SPKR_R, SPKR_R_COMP,
-						SPKR_R_BOOST, SPKR_R_VI};
-	unsigned int ch_rate[WSA881X_MAX_SWR_PORTS] = {2400, 600, 300, 1200};
-	unsigned int ch_mask[WSA881X_MAX_SWR_PORTS] = {0x1, 0xF, 0x3, 0x3};
-	struct msm_asoc_mach_data *pdata;
-	struct snd_soc_dapm_context *dapm;
-	struct snd_card *card;
-	struct snd_info_entry *entry;
-	int ret = 0;
-
-	if (!component) {
-		pr_err("%s component is NULL\n", __func__);
-		return -EINVAL;
-	}
-
-	card = component->card->snd_card;
-	dapm = snd_soc_component_get_dapm(component);
-
-	if (!strcmp(component->name_prefix, "SpkrLeft")) {
-		dev_dbg(component->dev, "%s: setting left ch map to codec %s\n",
-			__func__, component->name);
-		if (strnstr(component->name, "wsa883x", sizeof(component->name)))
-			wsa883x_set_channel_map(component, &spkleft_ports[0],
-					WSA881X_MAX_SWR_PORTS, &ch_mask[0],
-					&ch_rate[0], &spkleft_port_types[0]);
-		else
-			wsa881x_set_channel_map(component, &spkleft_ports[0],
-					WSA881X_MAX_SWR_PORTS, &ch_mask[0],
-					&ch_rate[0], &spkleft_port_types[0]);
-		if (dapm->component) {
-			snd_soc_dapm_ignore_suspend(dapm, "SpkrLeft IN");
-			snd_soc_dapm_ignore_suspend(dapm, "SpkrLeft SPKR");
-		}
-	} else if (!strcmp(component->name_prefix, "SpkrRight")) {
-		dev_dbg(component->dev, "%s: setting right ch map to codec %s\n",
-			__func__, component->name);
-		if (strnstr(component->name, "wsa883x", sizeof(component->name)))
-			wsa883x_set_channel_map(component, &spkright_ports[0],
-					WSA881X_MAX_SWR_PORTS, &ch_mask[0],
-					&ch_rate[0], &spkright_port_types[0]);
-		else
-			wsa881x_set_channel_map(component, &spkright_ports[0],
-					WSA881X_MAX_SWR_PORTS, &ch_mask[0],
-					&ch_rate[0], &spkright_port_types[0]);
-		if (dapm->component) {
-			snd_soc_dapm_ignore_suspend(dapm, "SpkrRight IN");
-			snd_soc_dapm_ignore_suspend(dapm, "SpkrRight SPKR");
-		}
-	} else {
-		dev_err(component->dev, "%s: wrong codec name %s\n", __func__,
-			component->name);
-		ret = -EINVAL;
-		goto err;
-	}
-	pdata = snd_soc_card_get_drvdata(component->card);
-	if (!pdata->codec_root) {
-		entry = msm_snd_info_create_subdir(card->module, "codecs",
-						 card->proc_root);
-		if (!entry) {
-			pr_err("%s: Cannot create codecs module entry\n",
-				 __func__);
-			ret = 0;
-			goto err;
-		}
-		pdata->codec_root = entry;
-	}
-	if (strnstr(component->name, "wsa883x", sizeof(component->name)))
-		wsa883x_codec_info_create_codec_entry(pdata->codec_root,
-						      component);
-	else
-		wsa881x_codec_info_create_codec_entry(pdata->codec_root,
-						      component);
-err:
-	return ret;
-}
+/* P480: WSA/TAS physical amplifier is not ported. No WSA AUX init. */
 
 static int msm_aux_codec_init(struct snd_soc_component *component)
 {
