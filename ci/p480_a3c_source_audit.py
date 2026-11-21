@@ -271,7 +271,7 @@ def main() -> None:
           "return 0;" in routing,
           "virtual software routing component has safe register-less callbacks")
     check("card->disable_route_checks = false;" in kona_source and
-          "P480 A3c ROUTES added=%u failed=0" in kona_source and
+          "P480 A3c ROUTES added=%d failed=0" in kona_source and
           "card->num_of_dapm_routes" in kona_source and
           "P480 A3c CARD_NUMBER number=%d" in kona_source and
           "P480 A3c DEVICES pcm=%d compress=%d" in kona_source,
