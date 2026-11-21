@@ -33,7 +33,15 @@ with zipfile.ZipFile(archive) as z:
 assert sha(A/"System.map")=="26ae9bda166d764bf695d6c51b8799632bc6f1ea276747a9f8fd1d0caf6d3a3e"
 run(["llvm-objcopy","-O","binary",str(A/"vmlinux"),str(A/"Image")])
 assert sha(A/"Image")=="c1e29a64f611f402cdc8e5db1f42fea5b6ec9f48b19df60d5b9aa6da2d8585ae"
-run(["pahole","-C","subsys_desc",str(A/"vmlinux")],log="original-subsys_desc.txt")
+# Some dwarves versions emit a valid DWARF layout but exit 1 when .BTF is absent.
+def layout(elf, log):
+    try:
+        run(["pahole","-C","subsys_desc",str(elf)],log=log)
+    except subprocess.CalledProcessError:
+        if "struct subsys_desc {" not in (O/log).read_text():
+            raise
+
+layout(A/"vmlinux","original-subsys_desc.txt")
 original_layout=(O/"original-subsys_desc.txt").read_text()
 assert "size: 464" in original_layout and "stop_ack_irq" in original_layout
 save("P479-original-provenance.json",{"original_artifact":14131467025,"ELF_member_label":"P471-D1-DATARMNET-CANDIDATE.vmlinux","raw_Image_sha256":sha(A/"Image"),"System_map_sha256":sha(A/"System.map"),"original_cmd_records":cmds,"old_header_choice_from_cmd":"UNKNOWN" if not cmds else "SEE_DEPENDENCIES","flash_authorized":False})
@@ -49,7 +57,7 @@ def build(root,dest,conf):
     print("Compiling "+dest.name,flush=True)
     run(args+["-j"+str(os.cpu_count() or 2),"Image","vmlinux"],log=dest.name+"-compile.log")
     assert (dest/"vmlinux").is_file() and (dest/"System.map").is_file()
-    run(["pahole","-C","subsys_desc",str(dest/"vmlinux")],log=dest.name+"-subsys_desc.txt")
+    layout(dest/"vmlinux",dest.name+"-subsys_desc.txt")
 control=R/"out_CONTROL";no=R/"out_NO_A3C"
 build(src,control,(src/"ci/build.config").read_text())
 c=(R/"ci/build.config").read_text()
