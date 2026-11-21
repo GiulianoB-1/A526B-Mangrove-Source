@@ -53,3 +53,13 @@ repack result is equivalent to hardware validation or flash authorization.
 A3C is opt-in, with default-off H4 and no voice/TAS/WSA/DisplayPort codecs.
 P480 runtime behavior is not tested. Both output images and the control are
 **review-only, NO FLASH pending Claude approval**.
+
+## Claude revision: original P479 provenance and duplicate-header risk
+
+The later Claude review ACCEPTS P480 A3C symbol comparison D, including code changes in q6asm, copy helpers, static aggregates, and the AArch64 erratum veneers. This does not authorize a flash.
+
+**P479 kernel safety correction:** the original P479 `vmlinux` recovered from permanent artifact 14131467025 has the compatibility `struct subsys_desc` with IRQ handlers and size 464 bytes. It generates an ARM64 Image and System.map matching the original P479 SHA256 pins exactly, despite the misleading `P471-D1-DATARMNET-CANDIDATE` filename. Thus the original hardware P479 ABI was the correct compat layout; the `55babd9` explicit include is a **direct-source clean-build workaround**, not a proven original P479 runtime bug. Keep the workaround while diagnosing the header search paths.
+
+The source contains exactly 24 differing header duplicates between `include/` and `a52-compat/include/`. The original reference ZIP has no `.o.cmd` records, so its historical compiler header selection cannot be established from those absent files. A clean `.o.cmd` audit and actual original P479 ELF versus control `bloat-o-meter` audit are tracked under run 44907289642. Do not claim full equivalence without analyzing those results.
+
+Exact original-P479-template A3C and NO-A3C boot images were ALREADY produced and independently cross-checked against the original P479 boot SHA/DTB, ramdisk and cmdline in run 44809264636. Only kernel size and boot-ID header fields change. They remain review-only, NO FLASH.

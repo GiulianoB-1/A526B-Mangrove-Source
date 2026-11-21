@@ -1,5 +1,8 @@
 # P480 four-source kernel comparison: reviewer handoff
 
+> **Reviewer update, November 21, 2026:** Claude ACCEPTED comparison D, including the copy helpers, session state, q6asm conditional deltas, aggregated static tables, and linker-generated erratum veneers. The interpretation below represents the earlier review stage. Crucially, the original P479 hardware kernel had the COMPATIBLE 464-byte `subsys_desc` layout, verified directly in original P479 vmlinux DWARF, so `55babd9` is a clean direct-source include-selection workaround, NOT proof of a hardware ABI defect. The original P479 ELF was RECOVERED from reference artifact 14131467025 as `phase447b-variants/P471-D1-DATARMNET-CANDIDATE.vmlinux`. Despite its P471 name, its ELF-generated raw Image SHA256 `c1e29a64…` and System.map SHA256 `26ae9bda…` exactly equal original P479. Therefore B IS MEASURABLE using that actual ELF, and the earlier 'B impossible' statement is superseded. Follow-up source-duplication and historical B audit: [run 44907289642](https://github.com/GiulianoB-1/A526B-Mangrove-Source/actions/runs/44907289642). NO FLASH. 
+
+
 **Status:** CI comparison completed, but **NOT APPROVED FOR FLASH**. This is a source and linked-symbol-size review, not a runtime or ABI proof.
 
 **Reproducible evidence:** [GitHub Actions run 44880139058](https://github.com/GiulianoB-1/A526B-Mangrove-Source/actions/runs/44880139058), source commit `4652ba4d7d08956e4af9d2911e44e1a4811e3180`. Artifact `P479-P480-FOUR-SOURCE-SYMBOL-EVIDENCE-4652ba4d7d08956e4af9d2911e44e1a4811e3180`, ID **14699652122**, contains every generated `.config.diff`, the actual C/D `scripts/bloat-o-meter -c` output, compiler diagnostic, JSON and SHA256SUMS. All artifact SHA256SUMS were verified.
