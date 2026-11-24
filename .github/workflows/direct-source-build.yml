@@ -522,7 +522,7 @@ jobs:
           make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
           cmp ci/build.config out_A3C/.config
           make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
-          grep -aFq 'P480 A3c INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=1' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=0' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c CAL_REGISTER_SKIPPED reason=not_initialized' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c CARD register rc=' out_A3C/arch/arm64/boot/Image
@@ -541,6 +541,19 @@ jobs:
           grep -aFq 'reason=SUPPLY_SINK_FROM_NON_SUPPLY' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c SND_CARD_REGISTER rc=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 CARD_GATED default=0' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 CARD_ENABLE rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 RPM_FORBID dev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 MBHC_SKIPPED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 DAPM_BIAS_HOLD' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 BOLERO_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 LPI_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 SWR_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 RPM dev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 VOTE clk=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 MBHC ev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 BIAS comp=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 ALIVE t=' out_A3C/arch/arm64/boot/Image
           # Prove the caller uses the external A3b symbols, not inline stubs.
           llvm-nm out_A3C/drivers/soc/qcom/p472_tg_audio/a3c/kona.o > package/A3C/P480-kona-symbols.txt
           grep -Eq '[[:space:]]U[[:space:]]+bolero_set_port_map$' package/A3C/P480-kona-symbols.txt
@@ -585,7 +598,7 @@ jobs:
             --kernel package/input/A3C.gz \
             --native-image out_A3C/arch/arm64/boot/Image \
             --variant A3C \
-            --output package/A3C/MANGROVE-P480-A3C-HLT.boot.img \
+            --output package/A3C/MANGROVE-P481-A3C-HLT.boot.img \
             --report package/A3C/P480-A3C-init-order-repack.json
           python3 - <<'PY'
           import json
@@ -614,7 +627,7 @@ jobs:
           from pathlib import Path
           from ci.p480_boot_repack import parse_boot
 
-          new_boot = Path('package/A3C/MANGROVE-P480-A3C-HLT.boot.img')
+          new_boot = Path('package/A3C/MANGROVE-P481-A3C-HLT.boot.img')
           old_boot = Path('package/input/P479-HLT.boot.img')
           native = Path('out_A3C/arch/arm64/boot/Image')
           meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
@@ -657,6 +670,19 @@ jobs:
               b'P480 A3c ROUTE_KEPT sink=',
               b'P480 A3c ROUTES kept=',
               b'P480 A3c KCONTROLS count=',
+              b'P481 CARD_GATED default=0',
+              b'P481 CARD_ENABLE rc=',
+              b'P481 RPM_FORBID dev=',
+              b'P481 MBHC_SKIPPED',
+              b'P481 DAPM_BIAS_HOLD',
+              b'P481 BOLERO_UNCLOCKED',
+              b'P481 LPI_UNCLOCKED',
+              b'P481 SWR_UNCLOCKED',
+              b'P481 RPM dev=',
+              b'P481 VOTE clk=',
+              b'P481 MBHC ev=',
+              b'P481 BIAS comp=',
+              b'P481 ALIVE t=',
               b'reason=SUPPLY_SINK_FROM_NON_SUPPLY',
               b'P480 A3c SND_CARD_REGISTER rc=',
               b'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s',
@@ -694,15 +720,16 @@ jobs:
           cp ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv package/A3C/
           cp ci/P480-A3C-DAPM-REVIEW.md package/A3C/
           cp ci/P480-A3C-DAPM-FIX4-REVIEW.md package/A3C/
+          cp ci/P481-DIAGNOSTIC-REVIEW.md package/A3C/
           cp ci/p480_collect_audio_readonly.sh package/A3C/
-          echo 'P480 A3C Fix 4: exact five invalid mic-to-supply routes. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum MANGROVE-P480-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P480-kona-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'P481 A3C card gate and crash diagnosis; incomplete raw SWR guard coverage. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P481-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: P480-A3C-LATE-INIT-FIX-FINAL-P479-${{ github.sha }}
+          name: P481-A3C-DIAGNOSTIC-FINAL-P479-${{ github.sha }}
           path: |
             package/A3C/
             p480-init-order-audit.json
