@@ -3,8 +3,8 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/jiffies.h>
-#include <dsp/q6core.h>
 #include <linux/kobject.h>
+#include <dsp/q6core.h>
 #include <linux/sysfs.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
