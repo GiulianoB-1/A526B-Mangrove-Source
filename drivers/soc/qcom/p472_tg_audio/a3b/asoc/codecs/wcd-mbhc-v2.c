@@ -1748,7 +1748,7 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 	pr_info("P481 MBHC ev=start\n");
 #endif
 	if (p481_mbhc_disabled())
-		return -EOPNOTSUPP;
+		return -ECANCELED; /* explicit diagnostic cancellation */
 	if (!mbhc || !mbhc_cfg)
 		return -EINVAL;
 
