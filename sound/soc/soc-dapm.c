@@ -35,6 +35,7 @@
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
+#include <linux/p481_audio_diag.h>
 #include <sound/initval.h>
 
 #include <trace/events/asoc.h>
@@ -727,6 +728,12 @@ static int snd_soc_dapm_set_bias_level(struct snd_soc_dapm_context *dapm,
 	struct snd_soc_card *card = dapm->card;
 	int ret = 0;
 
+#ifdef CONFIG_P480_A3C
+	if (p481_kona_card(card) && dapm->bias_level != level)
+		dev_info(dapm->dev, "P481 BIAS comp=%s %d->%d\n",
+			 dapm->component ? dapm->component->name : "card",
+			 dapm->bias_level, level);
+#endif
 	trace_snd_soc_bias_level_start(card, level);
 
 	ret = snd_soc_card_set_bias_level(card, dapm, level);
@@ -4808,6 +4815,14 @@ void snd_soc_dapm_init(struct snd_soc_dapm_context *dapm,
 		dapm->dev		= card->dev;
 	}
 
+#ifdef CONFIG_P480_A3C
+	/* Effective per-card bias policy; never mutate a const driver. */
+	if (p481_kona_card(card) && p481_bias_hold()) {
+		dapm->idle_bias_off = false;
+		dev_info(dapm->dev, "P481 DAPM_BIAS_HOLD comp=%s\n",
+			 component ? component->name : "card");
+	}
+#endif
 	INIT_LIST_HEAD(&dapm->list);
 	/* see for_each_card_dapms */
 	list_add(&dapm->list, &card->dapm_list);
