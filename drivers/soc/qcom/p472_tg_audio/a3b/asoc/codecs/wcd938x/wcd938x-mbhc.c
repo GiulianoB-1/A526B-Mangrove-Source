@@ -12,6 +12,9 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/regmap.h>
+#include <linux/pm_runtime.h>
+#include <linux/p484_audio.h>
+#include <soc/soundwire.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -951,6 +954,98 @@ EXPORT_SYMBOL(wcd938x_mbhc_get_impedance);
  * @mbhc_cfg: handle to mbhc configuration structure
  * return 0 if mbhc_start is success or error code in case of failure
  */
+#ifdef CONFIG_P480_A3C
+static DEFINE_MUTEX(p484_dump_lock);
+static struct wcd_mbhc *p484_dump_mbhc;
+
+static int p484_dump_regs(struct wcd_mbhc *mbhc, const char *src)
+{
+	static const unsigned int regs[] = {
+		WCD938X_ANA_MBHC_MECH,
+		WCD938X_ANA_MBHC_ELECT,
+		WCD938X_ANA_MBHC_ZDET,
+		WCD938X_ANA_MBHC_RESULT_1,
+		WCD938X_ANA_MBHC_RESULT_2,
+		WCD938X_ANA_MBHC_RESULT_3,
+		WCD938X_ANA_MICB2,
+		WCD938X_DIGITAL_INTR_MASK_0,
+		WCD938X_DIGITAL_INTR_MASK_1,
+		WCD938X_DIGITAL_INTR_MASK_2,
+		WCD938X_DIGITAL_INTR_STATUS_0,
+		WCD938X_DIGITAL_INTR_STATUS_1,
+		WCD938X_DIGITAL_INTR_STATUS_2,
+		WCD938X_DIGITAL_INTR_LEVEL_0,
+		WCD938X_DIGITAL_INTR_LEVEL_1,
+		WCD938X_DIGITAL_INTR_LEVEL_2,
+		WCD938X_MBHC_NEW_CTL_1,
+		WCD938X_MBHC_NEW_CTL_2,
+	};
+	struct snd_soc_component *c = mbhc->component;
+	struct wcd938x_priv *wcd = snd_soc_component_get_drvdata(c);
+	struct swr_master *master;
+	unsigned int val, i;
+	int rc = -ENODEV;
+
+	if (!wcd || !READ_ONCE(wcd->dev_up) || !wcd->tx_swr_dev ||
+	    !wcd->tx_swr_dev->master || !mbhc->mbhc_cfg)
+		goto fail;
+	master = wcd->tx_swr_dev->master;
+	rc = p484_swr_dump_get(master);
+	if (rc)
+		goto fail;
+	rc = pm_runtime_resume_and_get(c->dev);
+	if (rc < 0)
+		goto master_put;
+	dev_info(c->dev, "P484 MBHC_REGS src=%s hphl_swh=%d gnd_swh=%d gnd_det_en=%d enable_usbc_analog=%d mbhc_micbias=%d\n",
+		 src, mbhc->hphl_swh, mbhc->gnd_swh, mbhc->mbhc_cfg->gnd_det_en,
+		 mbhc->mbhc_cfg->enable_usbc_analog, mbhc->mbhc_cfg->mbhc_micbias);
+	for (i = 0; i < ARRAY_SIZE(regs); i++) {
+		rc = regmap_read(wcd->regmap, regs[i], &val);
+		if (rc)
+			break;
+		dev_info(c->dev, "P484 MBHC_REGS src=%s reg=0x%x val=0x%x\n", src, regs[i], val);
+	}
+	pm_runtime_mark_last_busy(c->dev);
+	pm_runtime_put_autosuspend(c->dev);
+master_put:
+	p484_swr_dump_put(master);
+fail:
+	if (rc)
+		dev_warn(c->dev, "P484 MBHC_REGS src=%s rc=%d\n", src, rc);
+	return rc;
+}
+
+int p484_mbhc_dump_start(struct wcd_mbhc *mbhc)
+{
+	int rc;
+
+	mutex_lock(&p484_dump_lock);
+	p484_dump_mbhc = mbhc;
+	rc = p484_dump_regs(mbhc, "start");
+	mutex_unlock(&p484_dump_lock);
+	return rc;
+}
+
+int p484_mbhc_dump_knob(void)
+{
+	int rc = -ENODEV;
+
+	mutex_lock(&p484_dump_lock);
+	if (p484_dump_mbhc)
+		rc = p484_dump_regs(p484_dump_mbhc, "knob");
+	mutex_unlock(&p484_dump_lock);
+	return rc;
+}
+
+void p484_mbhc_dump_clear(struct snd_soc_component *component)
+{
+	mutex_lock(&p484_dump_lock);
+	if (p484_dump_mbhc && p484_dump_mbhc->component == component)
+		p484_dump_mbhc = NULL;
+	mutex_unlock(&p484_dump_lock);
+}
+#endif
+
 int wcd938x_mbhc_hs_detect(struct snd_soc_component *component,
 			 struct wcd_mbhc_config *mbhc_cfg)
 {
@@ -992,6 +1087,9 @@ void wcd938x_mbhc_hs_detect_exit(struct snd_soc_component *component)
 		return;
 	}
 
+#ifdef CONFIG_P480_A3C
+	p484_mbhc_dump_clear(component);
+#endif
 	wcd938x = snd_soc_component_get_drvdata(component);
 	if (!wcd938x) {
 		pr_err("%s: wcd938x is NULL\n", __func__);
@@ -1155,6 +1253,9 @@ void wcd938x_mbhc_deinit(struct snd_soc_component *component)
 		return;
 	}
 
+#ifdef CONFIG_P480_A3C
+	p484_mbhc_dump_clear(component);
+#endif
 	wcd938x = snd_soc_component_get_drvdata(component);
 	if (!wcd938x) {
 		pr_err("%s: wcd938x is NULL\n", __func__);

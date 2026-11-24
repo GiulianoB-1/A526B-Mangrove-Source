@@ -12,6 +12,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/workqueue.h>
 #include <linux/p481_audio_diag.h>
+#include <linux/p484_audio.h>
 #include <sound/soc.h>
 
 extern int p480_kona_machine_init(void);
@@ -247,9 +248,24 @@ static ssize_t bolero_guard_store(struct kobject *kobj,
 }
 static struct kobj_attribute bolero_guard_attr = __ATTR_RW(bolero_guard);
 
+static ssize_t mbhc_dump_store(struct kobject *kobj,
+			       struct kobj_attribute *attr,
+			       const char *buf, size_t count)
+{
+	unsigned int val;
+	int rc;
+	if (kstrtouint(buf, 0, &val) || val != 1)
+		return -EINVAL;
+	rc = p484_mbhc_dump_knob();
+	if (rc)
+		return rc;
+	return count;
+}
+static struct kobj_attribute mbhc_dump_attr = __ATTR(mbhc_dump, 0200, NULL, mbhc_dump_store);
+
 static struct attribute *audio_attrs[] = {
 	&card_enable_attr.attr, &mbhc_enable_attr.attr, &rpm_forbid_attr.attr,
-	&dapm_idle_off_attr.attr, &bolero_guard_attr.attr, NULL,
+	&dapm_idle_off_attr.attr, &bolero_guard_attr.attr, &mbhc_dump_attr.attr, NULL,
 };
 static const struct attribute_group audio_group = { .attrs = audio_attrs };
 

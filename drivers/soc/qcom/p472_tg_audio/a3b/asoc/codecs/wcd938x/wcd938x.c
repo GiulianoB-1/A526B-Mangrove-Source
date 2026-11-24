@@ -5,6 +5,7 @@
 
 #include <linux/p481_audio_diag.h>
 #include <linux/module.h>
+#include <linux/p484_audio.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/device.h>
@@ -156,6 +157,7 @@ static int wcd938x_handle_post_irq(void *data)
 	regmap_read(wcd938x->regmap, WCD938X_DIGITAL_INTR_STATUS_1, &sts2);
 	regmap_read(wcd938x->regmap, WCD938X_DIGITAL_INTR_STATUS_2, &sts3);
 
+	dev_info_ratelimited(wcd938x->dev, "P484 WCD_IRQ post status=%02x/%02x/%02x\n", sts1, sts2, sts3);
 	wcd938x->tx_swr_dev->slave_irq_pending =
 			((sts1 || sts2 || sts3) ? true : false);
 
@@ -445,8 +447,19 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 		ch_rate = clk_rate;
 
 	slave_ch_idx = wcd938x_slave_get_slave_ch_val(slv_port_type);
-	if (slave_ch_idx != -EINVAL)
+	/* ZERO is an unset override: retain the TG DT master channel. */
+	if (slave_ch_idx >= 0 &&
+	    slave_ch_idx < ARRAY_SIZE(wcd938x->tx_master_ch_map) &&
+	    wcd938x->tx_master_ch_map[slave_ch_idx] != ZERO) {
 		ch_type = wcd938x->tx_master_ch_map[slave_ch_idx];
+		dev_info_ratelimited(component->dev,
+			"P484 TX_CHMAP slv=%u master=%u source=override\n",
+			slv_port_type, ch_type);
+	} else {
+		dev_info_ratelimited(component->dev,
+			"P484 TX_CHMAP slv=%u master=%u source=dt\n",
+			slv_port_type, ch_type);
+	}
 
 	dev_dbg(component->dev, "%s slv_ch_idx: %d, mstr_ch_type: %d\n",
 		__func__, slave_ch_idx, ch_type);
@@ -3860,6 +3873,9 @@ err:
 static void wcd938x_soc_codec_remove(struct snd_soc_component *component)
 {
 	struct wcd938x_priv *wcd938x = snd_soc_component_get_drvdata(component);
+#ifdef CONFIG_P480_A3C
+	p484_mbhc_dump_clear(component);
+#endif
 
 	if (!wcd938x) {
 		dev_err(component->dev, "%s: wcd938x is already NULL\n",

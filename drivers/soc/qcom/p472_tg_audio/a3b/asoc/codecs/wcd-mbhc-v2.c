@@ -3,6 +3,7 @@
  */
 #define DEBUG
 #include <linux/p481_audio_diag.h>
+#include <linux/p484_audio.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -1834,6 +1835,10 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 				__func__);
 			goto err;
 		}
+#ifdef CONFIG_P480_A3C
+		if (!strncmp(component->driver->name, "wcd938x", 7))
+			p484_mbhc_dump_start(mbhc);
+#endif
 	} else {
 		if (!mbhc->mbhc_fw || !mbhc->mbhc_cal)
 			schedule_delayed_work(&mbhc->mbhc_firmware_dwork,

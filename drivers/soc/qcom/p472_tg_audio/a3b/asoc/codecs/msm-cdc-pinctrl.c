@@ -232,8 +232,8 @@ int msm_cdc_pinctrl_set_wakeup_capable(struct device_node *np, bool enable)
 					ret = gpio_irq;
 				} else if (gpio_data->p479_wake_enabled[i] == enable) {
 					if (!enable)
-						pr_info("P472 A3b CDC_TLMM_WAKE pin=%d gpio=%d irq=%d en=0 skip_unbalanced\n",
-							pin, gpio, gpio_irq);
+						pr_info("P472 A3b CDC_TLMM_WAKE pin=%d gpio=%d irq=%d en=0 skip_unbalanced caller=%pS\n",
+							pin, gpio, gpio_irq, (void *)_RET_IP_);
 					continue;
 				} else {
 					ret = irq_set_irq_wake(gpio_irq, enable);
@@ -241,8 +241,8 @@ int msm_cdc_pinctrl_set_wakeup_capable(struct device_node *np, bool enable)
 						gpio_data->p479_wake_enabled[i] = enable;
 				}
 			}
-			pr_info("P472 A3b CDC_TLMM_WAKE pin=%d gpio=%d irq=%d en=%d rc=%d\n",
-				pin, gpio, gpio_irq, enable, ret);
+			pr_info("P472 A3b CDC_TLMM_WAKE pin=%d gpio=%d irq=%d en=%d rc=%d caller=%pS\n",
+				pin, gpio, gpio_irq, enable, ret, (void *)_RET_IP_);
 			if (ret < 0)
 				goto exit;
 			if (ret < 0)

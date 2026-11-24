@@ -30,6 +30,12 @@
 #include <dsp/q6core.h>
 #include <dsp/q6common.h>
 #include <dsp/audio_cal_utils.h>
+#include <linux/build_bug.h>
+
+/* P484: the TG 32-bit and 64-bit fixed-width calibration layouts agree. */
+static_assert(sizeof(struct audio_cal_type_basic) == 16);
+static_assert(sizeof(struct audio_cal_info_adm_top) == 20);
+static_assert(sizeof(struct audio_cal_type_adm_top) == 36);
 
 #include "msm-pcm-routing-v2.h"
 #include "msm-pcm-routing-devdep.h"
@@ -1804,7 +1810,7 @@ static void msm_pcm_routing_build_matrix(int fedai_id, int sess_type,
 		/* P480: never configure postprocessing after ADM rejected FE calibration. */
 		p480_map_rc = adm_matrix_map(fedai_id, path_type, payload,
 					       perf_mode, passthr_mode);
-		if (p480_map_rc) {
+		if (p480_map_rc < 0) {
 			pr_err_ratelimited("P480 A3c ADM build_matrix FE=%d rc=%d: routing not applied\n",
 					fedai_id, p480_map_rc);
 			return;
@@ -2084,7 +2090,7 @@ int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 		payload.session_id = fe_dai_map[fe_id][session_type].strm_id;
 		p480_map_rc = adm_matrix_map(fe_id, path_type, payload,
 					       perf_mode, passthr_mode);
-		if (p480_map_rc) {
+		if (p480_map_rc < 0) {
 			pr_err_ratelimited("P480 A3c ADM compressed FE=%d rc=%d: routing not applied\n",
 					fe_id, p480_map_rc);
 			mutex_unlock(&routing_lock);
@@ -2484,12 +2490,13 @@ int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode,
 		/* Reject unsupported FE calibration instead of returning success. */
 		ret = adm_matrix_map(fedai_id, path_type, payload,
 				     perf_mode, passthr_mode);
-		if (ret) {
+		if (ret < 0) {
 			pr_err_ratelimited("P480 A3c ADM PCM FE=%d rc=%d: routing not applied\n",
 					fedai_id, ret);
 			mutex_unlock(&routing_lock);
 			return ret;
 		}
+		ret = 0;
 		msm_pcm_routng_cfg_matrix_map_pp(payload, path_type, perf_mode);
 	}
 

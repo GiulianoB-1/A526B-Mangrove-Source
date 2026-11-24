@@ -23,7 +23,7 @@ subdir-ccflags-y += -DCONFIG_QTI_PP=1
 subdir-ccflags-y += -DCONFIG_MSM_CDC_PINCTRL=1
 # Kona's reachable TG RX init must call the genuine A3b bolero API,
 # not the disabled-config inline success stubs in its donor header.
-CFLAGS_kona.o += -DCONFIG_SND_SOC_BOLERO=1
+CFLAGS_kona.o += -DCONFIG_SND_SOC_BOLERO=1 -DCONFIG_SND_SOC_WCD938X=1
 obj-$(CONFIG_P480_A3C) += msm-pcm-q6-v2.o msm-compress-q6-v2.o
 obj-$(CONFIG_P480_A3C) += msm-pcm-hostless.o msm-pcm-afe-v2.o msm-pcm-q6-noirq.o
 obj-$(CONFIG_P480_A3C) += msm-pcm-routing-v2.o msm-pcm-routing-devdep.o

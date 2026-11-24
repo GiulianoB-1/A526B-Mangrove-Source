@@ -13,6 +13,7 @@
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/p481_audio_diag.h>
+#include <linux/p484_audio.h>
 #include <soc/snd_event.h>
 #include <linux/pm_runtime.h>
 #include <soc/swr-common.h>
@@ -165,6 +166,8 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 
 	mutex_lock(&priv->clk_lock);
 	if (!priv->dev_up) {
+		dev_warn_ratelimited(priv->dev, "P484 BOLERO_ACCESS op=read macro=%u reg=0x%x reason=ssr rc=%d caller=%pS\n",
+			macro_id, reg, -EINVAL, (void *)_RET_IP_);
 		dev_dbg_ratelimited(priv->dev,
 			"%s: SSR in progress, exit\n", __func__);
 		ret = -EINVAL;
@@ -254,6 +257,8 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 
 	mutex_lock(&priv->clk_lock);
 	if (!priv->dev_up) {
+		dev_warn_ratelimited(priv->dev, "P484 BOLERO_ACCESS op=write macro=%u reg=0x%x reason=ssr rc=%d caller=%pS\n",
+			macro_id, reg, -EINVAL, (void *)_RET_IP_);
 		dev_dbg_ratelimited(priv->dev,
 			"%s: SSR in progress, exit\n", __func__);
 		ret = -EINVAL;
@@ -441,6 +446,66 @@ static bool bolero_is_valid_child_dev(struct device *dev)
 
 	return false;
 }
+
+#ifdef CONFIG_P480_A3C
+/* Independent real manager-owned refs, one pair per started DMA port. */
+bool p484_cdc_vote_held(struct device *dev)
+{
+	struct bolero_priv *priv = dev ? dev_get_drvdata(dev) : NULL;
+
+	return priv && READ_ONCE(priv->dev_up) &&
+		priv->lpass_core_hw_vote && priv->lpass_audio_hw_vote &&
+		digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote) &&
+		digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote);
+}
+
+int p484_cdc_vote_get(struct device *dev, unsigned int port)
+{
+	struct bolero_priv *priv;
+	int rc = -ENODEV;
+	bool core = false, audio = false;
+
+	if (!dev || !bolero_is_valid_codec_dev(dev))
+		goto done;
+	priv = dev_get_drvdata(dev);
+	if (!priv || !READ_ONCE(priv->dev_up) ||
+	    !priv->lpass_core_hw_vote || !priv->lpass_audio_hw_vote)
+		goto done;
+	rc = digital_cdc_rsc_mgr_hw_vote_enable(priv->lpass_core_hw_vote);
+	if (rc)
+		goto done;
+	core = true;
+	rc = digital_cdc_rsc_mgr_hw_vote_enable(priv->lpass_audio_hw_vote);
+	if (rc)
+		goto rollback_core;
+	audio = true;
+	if (!p484_cdc_vote_held(dev)) {
+		rc = -EHOSTDOWN;
+		digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_audio_hw_vote);
+		audio = false;
+		goto rollback_core;
+	}
+	goto done;
+rollback_core:
+	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_core_hw_vote);
+	core = false;
+done:
+	pr_info("P484 CDC_DMA_VOTE op=get port=0x%x core=%d dcodec=%d rc=%d\n",
+		port, core, audio, rc);
+	return rc;
+}
+
+void p484_cdc_vote_put(struct device *dev, unsigned int port)
+{
+	struct bolero_priv *priv = dev_get_drvdata(dev);
+
+	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_audio_hw_vote);
+	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_core_hw_vote);
+	pr_info("P484 CDC_DMA_VOTE op=put port=0x%x core=%d dcodec=%d rc=0\n",
+		port, digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote),
+		digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote));
+}
+#endif
 
 static bool bolero_is_valid_codec_dev(struct device *dev)
 {

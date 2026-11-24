@@ -1370,6 +1370,11 @@ static int soc_bind_aux_dev(struct snd_soc_card *card)
 
 		/* for snd_soc_component_init() */
 		snd_soc_component_set_aux(component, aux);
+#ifdef CONFIG_P480_A3C
+		if (card->name && !strcmp(card->name, "lito-lagoonmtp-snd-card"))
+			dev_info(card->dev, "P484 AUX_BIND idx=%d node=%pOF comp=%s dev=%s init=%ps bound=%d\n",
+				 i, aux->dlc.of_node, component->name, dev_name(component->dev), aux->init, !!component->card);
+#endif
 		/* see for_each_card_auxs */
 		list_add(&component->card_aux_list, &card->aux_comp_list);
 	}

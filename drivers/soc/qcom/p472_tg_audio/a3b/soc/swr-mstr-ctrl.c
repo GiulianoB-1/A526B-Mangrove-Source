@@ -4,6 +4,7 @@
  */
 
 #include <linux/p481_audio_diag.h>
+#include <linux/p484_audio.h>
 #include <linux/clk-provider.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
@@ -522,6 +523,49 @@ exit:
 
 	return ret;
 }
+
+#ifdef CONFIG_P480_A3C
+int p484_swr_dump_get(struct swr_master *master)
+{
+	struct swr_mstr_ctrl *swrm = swr_get_ctrl_data(master);
+	int rc;
+
+	if (!swrm || !swrm->lpass_core_hw_vote || !swrm->lpass_core_audio)
+		return -ENODEV;
+	rc = pm_runtime_resume_and_get(swrm->dev);
+	if (rc < 0)
+		return rc;
+	rc = swrm_request_hw_vote(swrm, LPASS_HW_CORE, true);
+	if (rc)
+		goto pm_put;
+	rc = swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, true);
+	if (rc)
+		goto core_put;
+	if (!digital_cdc_rsc_mgr_hw_vote_held(swrm->lpass_core_hw_vote) ||
+	    !digital_cdc_rsc_mgr_hw_vote_held(swrm->lpass_core_audio)) {
+		rc = -EHOSTDOWN;
+		swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, false);
+		goto core_put;
+	}
+	return 0;
+core_put:
+	swrm_request_hw_vote(swrm, LPASS_HW_CORE, false);
+pm_put:
+	pm_runtime_mark_last_busy(swrm->dev);
+	pm_runtime_put_autosuspend(swrm->dev);
+	return rc;
+}
+
+void p484_swr_dump_put(struct swr_master *master)
+{
+	struct swr_mstr_ctrl *swrm = swr_get_ctrl_data(master);
+
+	swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, false);
+	swrm_request_hw_vote(swrm, LPASS_HW_CORE, false);
+	pm_runtime_mark_last_busy(swrm->dev);
+	pm_runtime_put_autosuspend(swrm->dev);
+}
+#endif
 
 static int swrm_clk_request(struct swr_mstr_ctrl *swrm, bool enable)
 {
@@ -2137,6 +2181,7 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 
 	intr_sts = swr_master_read(swrm, SWRM_INTERRUPT_STATUS);
 	intr_sts_masked = intr_sts & swrm->intr_mask;
+	dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ raw=0x%x masked=0x%x irq=%d\n", intr_sts, intr_sts_masked, irq);
 
 	dev_dbg(swrm->dev, "%s: status: 0x%x \n", __func__, intr_sts_masked);
 	trace_printk("%s: status: 0x%x \n", __func__, intr_sts_masked);
@@ -2148,6 +2193,7 @@ handle_irq:
 
 		switch (value) {
 		case SWRM_INTERRUPT_STATUS_SLAVE_PEND_IRQ:
+			dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ slave_pending=1 raw=0x%x\n", intr_sts);
 			dev_dbg(swrm->dev, "%s: Trigger irq to slave device\n",
 				__func__);
 			status = swr_master_read(swrm, SWRM_MCP_SLV_STATUS);
@@ -2172,6 +2218,7 @@ handle_irq:
 				if (swr_dev->slave_irq) {
 					do {
 						swr_dev->slave_irq_pending = 0;
+						dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ devnum=%u virq=%u\n", devnum, irq_find_mapping(swr_dev->slave_irq, 0));
 						handle_nested_irq(
 							irq_find_mapping(
 							swr_dev->slave_irq, 0));
@@ -2371,6 +2418,7 @@ static irqreturn_t swrm_wakeup_interrupt(int irq, void *dev)
 	}
 
 	trace_printk("%s enter\n", __func__);
+	dev_info_ratelimited(swrm->dev, "P484 SWR_WAKE irq=%d wake_irq=%d ipc=%d state=%d\n", irq, swrm->wake_irq, swrm->ipc_wakeup, swrm->state);
 	mutex_lock(&swrm->devlock);
 	if (swrm->state == SWR_MSTR_SSR || !swrm->dev_up) {
 		if (swrm->wake_irq > 0) {
@@ -3261,6 +3309,7 @@ static int swrm_runtime_resume(struct device *dev)
 	if ((swrm->state == SWR_MSTR_DOWN) ||
 	    (swrm->state == SWR_MSTR_SSR && swrm->dev_up)) {
 		if (swrm->clk_stop_mode0_supp) {
+			dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=resume wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
 			if (swrm->wake_irq > 0) {
 				if (unlikely(!irq_get_irq_data
 				    (swrm->wake_irq))) {
@@ -3490,10 +3539,12 @@ static int swrm_runtime_suspend(struct device *dev)
 
 		if (swrm->clk_stop_mode0_supp) {
 			if (swrm->wake_irq > 0) {
+				dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=suspend wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
 				irq_data = irq_get_irq_data(swrm->wake_irq);
 				if (irq_data && irqd_irq_disabled(irq_data))
 					enable_irq(swrm->wake_irq);
 			} else if (swrm->ipc_wakeup) {
+				dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=ipc_register\n");
 				msm_aud_evt_blocking_notifier_call_chain(
 					SWR_WAKE_IRQ_REGISTER, (void *)swrm);
 				swrm->ipc_wakeup_triggered = false;

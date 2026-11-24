@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/of_device.h>
+#include <linux/p484_audio.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
@@ -364,6 +365,7 @@ struct msm_dai_q6_meta_mi2s_dai_data {
 };
 
 struct msm_dai_q6_cdc_dma_dai_data {
+	struct device *p484_vote_owner;
 	DECLARE_BITMAP(status_mask, STATUS_MAX);
 	DECLARE_BITMAP(hwfree_status, STATUS_MAX);
 	u32 rate;
@@ -15664,6 +15666,11 @@ static int msm_dai_q6_dai_cdc_dma_remove(struct snd_soc_dai *dai)
 			dev_err(dai->dev, "fail to close AFE port\n");
 		clear_bit(STATUS_PORT_STARTED, dai_data->status_mask);
 	}
+	if (dai_data->p484_vote_owner) {
+		p484_cdc_vote_put(dai_data->p484_vote_owner, dai->id);
+		put_device(dai_data->p484_vote_owner);
+		dai_data->p484_vote_owner = NULL;
+	}
 	return rc;
 }
 
@@ -15784,6 +15791,9 @@ static int msm_dai_q6_cdc_dma_prepare(struct snd_pcm_substream *substream,
 	struct msm_dai_q6_cdc_dma_dai_data *dai_data =
 						dev_get_drvdata(dai->dev);
 	int rc = 0;
+	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
+	struct snd_soc_dai *codec = asoc_rtd_to_codec(rtd, 0);
+	struct device *owner = codec->component->dev;
 
 	if (!test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
 		if ((dai->id == AFE_PORT_ID_WSA_CODEC_DMA_TX_0) &&
@@ -15798,8 +15808,38 @@ static int msm_dai_q6_cdc_dma_prepare(struct snd_pcm_substream *substream,
 				pr_debug("%s: afe send data alignment failed %d\n",
 					__func__, rc);
 		}
-		rc = afe_port_start(dai->id, &dai_data->port_config,
-						dai_data->rate);
+		/* Hold both real votes across the CPU DAI start/stop lifetime. */
+		if (!dai_data->p484_vote_owner) {
+			rc = p484_cdc_vote_get(owner, dai->id);
+			if (rc)
+				return rc;
+			dai_data->p484_vote_owner = get_device(owner);
+		}
+		if (!p484_cdc_vote_held(dai_data->p484_vote_owner))
+			rc = -EHOSTDOWN;
+		else {
+			rc = afe_port_start(dai->id, &dai_data->port_config,
+						    dai_data->rate);
+			if (rc < 0) {
+				/* Best-effort cleanup of a partially started BE. */
+				int stop_rc = afe_close(dai->id);
+				dev_warn(dai->dev,
+					"P484 CDC_DMA_ROLLBACK port=0x%x start_rc=%d stop_rc=%d\n",
+					dai->id, rc, stop_rc);
+			}
+		}
+		dev_info(dai->dev, "P484 CDC_DMA_START port=0x%x votes=%d bit_width=%u format=%u rate=%u channels=%u mask=0x%x rc=%d\n",
+			 dai->id, p484_cdc_vote_held(dai_data->p484_vote_owner),
+			 dai_data->port_config.cdc_dma.bit_width,
+			 dai_data->port_config.cdc_dma.data_format,
+			 dai_data->port_config.cdc_dma.sample_rate,
+			 dai_data->port_config.cdc_dma.num_channels,
+			 dai_data->port_config.cdc_dma.active_channels_mask, rc);
+		if (rc < 0) {
+			p484_cdc_vote_put(dai_data->p484_vote_owner, dai->id);
+			put_device(dai_data->p484_vote_owner);
+			dai_data->p484_vote_owner = NULL;
+		}
 		if (rc < 0)
 			dev_err(dai->dev, "fail to open AFE port 0x%x\n",
 				dai->id);
@@ -15828,6 +15868,12 @@ static void msm_dai_q6_cdc_dma_shutdown(struct snd_pcm_substream *substream,
 		dev_dbg(dai->dev, "%s: dai_data->status_mask = %ld\n", __func__,
 			*dai_data->status_mask);
 		clear_bit(STATUS_PORT_STARTED, dai_data->status_mask);
+	}
+
+	if (dai_data->p484_vote_owner) {
+		p484_cdc_vote_put(dai_data->p484_vote_owner, dai->id);
+		put_device(dai_data->p484_vote_owner);
+		dai_data->p484_vote_owner = NULL;
 	}
 
 	if (test_bit(STATUS_PORT_STARTED, dai_data->hwfree_status))

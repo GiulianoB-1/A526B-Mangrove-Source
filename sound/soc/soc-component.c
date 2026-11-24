@@ -54,6 +54,11 @@ int snd_soc_component_init(struct snd_soc_component *component)
 
 	if (component->init)
 		ret = component->init(component);
+#ifdef CONFIG_P480_A3C
+	if (component->card && component->card->name &&
+	    !strcmp(component->card->name, "lito-lagoonmtp-snd-card"))
+		dev_info(component->dev, "P484 COMP_INIT comp=%s init=%ps rc=%d\n", component->name, component->init, ret);
+#endif
 
 	return soc_component_ret(component, ret);
 }

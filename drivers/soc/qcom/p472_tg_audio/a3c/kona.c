@@ -187,6 +187,7 @@ struct msm_asoc_mach_data {
 	struct snd_info_entry *codec_root;
 	bool codec_reg_done; /* one genuine RX init per card lifetime */
 	bool rx_init_started;
+	bool p484_wcd_aux_ran;
 	int usbc_en2_gpio; /* used by gpio driver API */
 	int lito_v2_enabled;
 	struct device_node *dmic01_gpio_p; /* used by pinctrl API */
@@ -7424,6 +7425,17 @@ static int msm_aux_codec_init(struct snd_soc_component *component)
 	struct snd_info_entry *entry;
 	struct snd_card *card = component->card->snd_card;
 	struct msm_asoc_mach_data *pdata;
+	const char *stage = "controls";
+	bool wcd938x = !strncmp(component->driver->name, "wcd938x", 7);
+
+	dev_info(component->dev, "P484 AUX_INIT enter comp=%s drv=%s\n", component->name, component->driver->name);
+	pdata = snd_soc_card_get_drvdata(component->card);
+	if (wcd938x && pdata->p484_wcd_aux_ran) {
+		stage = "skipped";
+		goto done;
+	}
+	if (wcd938x)
+		pdata->p484_wcd_aux_ran = true;
 
 	snd_soc_dapm_ignore_suspend(dapm, "EAR");
 	snd_soc_dapm_ignore_suspend(dapm, "AUX");
@@ -7469,17 +7481,21 @@ static int msm_aux_codec_init(struct snd_soc_component *component)
 	if (ret < 0) {
 		dev_err(component->dev, "%s: add codec specific snd controls failed: %d\n",
 			__func__, ret);
-		return ret;
+		goto done;
 	}
 
 mbhc_cfg_cal:
+	stage = "mbhc";
 	if (p481_mbhc_disabled()) {
 		dev_info(component->dev, "P481 MBHC_SKIPPED\n");
-		return 0;
+		stage = "skipped";
+		goto done;
 	}
 	mbhc_calibration = def_wcd_mbhc_cal();
-	if (!mbhc_calibration)
-		return -ENOMEM;
+	if (!mbhc_calibration) {
+		ret = -ENOMEM;
+		goto done;
+	}
 	wcd_mbhc_cfg.calibration = mbhc_calibration;
 	if (!strncmp(component->driver->name, "wcd937x", 7))
 		ret = wcd937x_mbhc_hs_detect(component, &wcd_mbhc_cfg);
@@ -7490,10 +7506,13 @@ mbhc_cfg_cal:
 			__func__, ret);
 		goto err_hs_detect;
 	}
-	return 0;
+	goto done;
 
 err_hs_detect:
+	wcd_mbhc_cfg.calibration = NULL;
 	kfree(mbhc_calibration);
+done:
+	dev_info(component->dev, "P484 AUX_INIT exit rc=%d stage=%s\n", ret, stage);
 	return ret;
 }
 
@@ -8323,6 +8342,17 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 			 "P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s\n",
 			 card->snd_card->number, card->snd_card->id,
 			 card->snd_card->shortname, card->snd_card->driver);
+		{
+			struct snd_soc_component *aux_comp;
+			for_each_card_auxs(card, aux_comp) {
+				dev_info(card->dev, "P484 AUX_STATE comp=%s bound=%d init=%ps ran=%d\n",
+					 aux_comp->name, !!aux_comp->card, aux_comp->init,
+					 pdata->p484_wcd_aux_ran);
+				if (!strncmp(aux_comp->driver->name, "wcd938x", 7) &&
+				    !pdata->p484_wcd_aux_ran)
+					dev_err(card->dev, "P484 AUX_INIT_MISSED comp=%s\n", aux_comp->name);
+			}
+		}
 		p480_log_real_device_counts(card);
 		p481_alive_start();
 	}

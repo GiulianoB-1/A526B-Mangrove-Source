@@ -369,6 +369,8 @@ static irqreturn_t regmap_irq_thread(int irq, void *d)
 	bool handled = false;
 	u32 reg;
 
+	if (IS_ENABLED(CONFIG_P480_A3C) && chip->name && !strcmp(chip->name, "wcd938x"))
+		pr_info_ratelimited("P484 WCD_IRQ entry virq=%d\n", irq);
 	if (chip->handle_pre_irq)
 		chip->handle_pre_irq(chip->irq_drv_data);
 
@@ -495,6 +497,8 @@ static irqreturn_t regmap_irq_thread(int irq, void *d)
 	 * doing a write per register.
 	 */
 	for (i = 0; i < data->chip->num_regs; i++) {
+		if (IS_ENABLED(CONFIG_P480_A3C) && chip->name && !strcmp(chip->name, "wcd938x"))
+			pr_info_ratelimited("P484 WCD_IRQ virq=%d idx=%d status=0x%x mask=0x%x\n", irq, i, data->status_buf[i], data->mask_buf[i]);
 		data->status_buf[i] &= ~data->mask_buf[i];
 
 		if (data->status_buf[i] && (chip->ack_base || chip->use_ack)) {
