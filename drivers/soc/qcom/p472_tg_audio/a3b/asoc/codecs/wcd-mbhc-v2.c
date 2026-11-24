@@ -973,6 +973,9 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	struct snd_soc_component *component = mbhc->component;
 	enum snd_jack_types jack_type;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_swch_irq_handler\n");
+#endif
 	dev_dbg(component->dev, "%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	mbhc->in_swch_irq_handler = true;
@@ -1141,6 +1144,9 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_mech_plug_detect_irq\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 	if (mbhc == NULL) {
 		pr_err("%s: NULL irq data\n", __func__);
@@ -1201,6 +1207,9 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 	struct wcd_mbhc *mbhc;
 	s16 btn_result = 0;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_btn_lpress_fn\n");
+#endif
 	pr_debug("%s: Enter\n", __func__);
 
 	dwork = to_delayed_work(work);
@@ -1247,6 +1256,9 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	int mask;
 	unsigned long msec_val;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_btn_press_handler\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 	complete(&mbhc->btn_press_compl);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1298,6 +1310,9 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int ret;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_release_handler\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	if (wcd_swch_level_remove(mbhc)) {
@@ -1363,6 +1378,9 @@ static irqreturn_t wcd_mbhc_hphl_ocp_irq(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int val;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphl_ocp_irq\n");
+#endif
 	pr_debug("%s: received HPHL OCP irq\n", __func__);
 	if (mbhc) {
 		if (mbhc->mbhc_cb->hph_register_recovery) {
@@ -1403,6 +1421,9 @@ static irqreturn_t wcd_mbhc_hphr_ocp_irq(int irq, void *data)
 {
 	struct wcd_mbhc *mbhc = data;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphr_ocp_irq\n");
+#endif
 	pr_debug("%s: received HPHR OCP irq\n", __func__);
 
 	if (!mbhc) {
@@ -1445,6 +1466,9 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	int ret = 0;
 	struct snd_soc_component *component = mbhc->component;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_initialise\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 
@@ -1556,6 +1580,9 @@ static void wcd_mbhc_fw_read(struct work_struct *work)
 	int ret = -1, retry = 0;
 	bool use_default_cal = false;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_fw_read\n");
+#endif
 	dwork = to_delayed_work(work);
 	mbhc = container_of(dwork, struct wcd_mbhc, mbhc_firmware_dwork);
 	component = mbhc->component;
