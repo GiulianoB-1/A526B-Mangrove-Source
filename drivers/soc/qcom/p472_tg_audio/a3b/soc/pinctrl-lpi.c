@@ -20,6 +20,8 @@
 #include <soc/snd_event.h>
 #include <dsp/digital-cdc-rsc-mgr.h>
 #include <linux/pm_runtime.h>
+#include <linux/clk-provider.h>
+#include <linux/p481_audio_diag.h>
 #include <dsp/audio_notifier.h>
 
 #include "core.h"
@@ -145,6 +147,17 @@ static const char *const lpi_gpio_functions[] = {
 
 int lpi_pinctrl_runtime_suspend(struct device *dev);
 
+#ifdef CONFIG_P480_A3C
+static atomic_t p481_lpi_faults = ATOMIC_INIT(0);
+static void p481_lpi_fault(unsigned int addr, void *caller)
+{
+	pr_err_ratelimited("P481 LPI_UNCLOCKED reg=0x%x caller=%pS\n", addr, caller);
+	if (atomic_inc_return(&p481_lpi_faults) <= 5)
+		dump_stack();
+}
+#endif
+
+
 static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 {
 	int ret = 0;
@@ -161,6 +174,17 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 	if (ret < 0)
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
+#ifdef CONFIG_P480_A3C
+	if (!state->core_hw_vote_status ||
+	    (state->lpass_core_hw_vote &&
+	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
+	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
+	     !__clk_get_enable_count(state->lpass_audio_hw_vote))) {
+		p481_lpi_fault(addr, (void *)_RET_IP_);
+		ret = -EHOSTDOWN;
+		goto err;
+	}
+#endif
 	if (!state->core_hw_vote_status) {
 		if (__ratelimit(&rtl))
 			pr_err("%s: core hw vote clk is not enabled\n",
@@ -194,6 +218,17 @@ static int lpi_gpio_write(struct lpi_gpio_pad *pad, unsigned int addr,
 	if (ret < 0)
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
+#ifdef CONFIG_P480_A3C
+	if (!state->core_hw_vote_status ||
+	    (state->lpass_core_hw_vote &&
+	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
+	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
+	     !__clk_get_enable_count(state->lpass_audio_hw_vote))) {
+		p481_lpi_fault(addr, (void *)_RET_IP_);
+		ret = -EHOSTDOWN;
+		goto err;
+	}
+#endif
 	if (!state->core_hw_vote_status) {
 		if (__ratelimit(&rtl))
 			pr_err("%s: core hw vote clk is not enabled\n",
@@ -858,11 +893,17 @@ int lpi_pinctrl_runtime_resume(struct device *dev)
 	int ret = 0;
 	struct clk *hw_vote = state->lpass_core_hw_vote;
 
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=entry rc=0\n", dev_name(dev));
+#endif
 	trace_printk("%s: enter\n", __func__);
 	if (state->lpass_core_hw_vote == NULL) {
 		dev_dbg(dev, "%s: Invalid core hw node\n", __func__);
 		if (state->lpass_audio_hw_vote == NULL) {
 			dev_dbg(dev, "%s: Invalid audio hw node\n", __func__);
+			#ifdef CONFIG_P480_A3C
+			dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=0 vote_rc=%d\n", dev_name(dev), ret);
+			#endif
 			return 0;
 		}
 		hw_vote = state->lpass_audio_hw_vote;
@@ -885,6 +926,9 @@ int lpi_pinctrl_runtime_resume(struct device *dev)
 exit:
 	mutex_unlock(&state->core_hw_vote_lock);
 	trace_printk("%s: exit\n", __func__);
+	#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=0 vote_rc=%d\n", dev_name(dev), ret);
+	#endif
 	return 0;
 }
 
@@ -893,11 +937,17 @@ int lpi_pinctrl_runtime_suspend(struct device *dev)
 	struct lpi_gpio_state *state = dev_get_drvdata(dev);
 	struct clk *hw_vote = state->lpass_core_hw_vote;
 
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=entry rc=0\n", dev_name(dev));
+#endif
 	trace_printk("%s: enter\n", __func__);
 	if (state->lpass_core_hw_vote == NULL) {
 		dev_dbg(dev, "%s: Invalid core hw node\n", __func__);
 		if (state->lpass_audio_hw_vote == NULL) {
 			dev_dbg(dev, "%s: Invalid audio hw node\n", __func__);
+			#ifdef CONFIG_P480_A3C
+			dev_info(dev, "P481 RPM dev=%s op=suspend phase=exit rc=0\n", dev_name(dev));
+			#endif
 			return 0;
 		}
 		hw_vote = state->lpass_audio_hw_vote;
@@ -910,6 +960,9 @@ int lpi_pinctrl_runtime_suspend(struct device *dev)
 	}
 	mutex_unlock(&state->core_hw_vote_lock);
 	trace_printk("%s: exit\n", __func__);
+	#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=exit rc=0\n", dev_name(dev));
+	#endif
 	return 0;
 }
 
