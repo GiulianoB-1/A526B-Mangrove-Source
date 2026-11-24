@@ -2,6 +2,7 @@
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 #define DEBUG
+#include <linux/p481_audio_diag.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -1716,6 +1717,11 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 	const char *usb_c_dt = "qcom,msm-mbhc-usbc-audio-supported";
 	const char *gnd_det = "qcom,msm-mbhc-gnd-det";
 
+#ifdef CONFIG_P480_A3C
+	pr_info("P481 MBHC ev=start\n");
+#endif
+	if (p481_mbhc_disabled())
+		return -EOPNOTSUPP;
 	if (!mbhc || !mbhc_cfg)
 		return -EINVAL;
 
@@ -1805,6 +1811,9 @@ EXPORT_SYMBOL(wcd_mbhc_start);
 
 void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 {
+	if (p481_mbhc_disabled())
+		return;
+
 	pr_debug("%s: enter\n", __func__);
 
 	if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE) {
@@ -1986,6 +1995,17 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_component *component,
 	}
 	init_completion(&mbhc->btn_press_compl);
 
+	/* Keep real jack inputs and inert MBHC data, but never arm a
+	 * notifier, detection IRQ, or scheduled detector in this bisect.
+	 */
+	if (p481_mbhc_disabled()) {
+		init_waitqueue_head(&mbhc->wait_btn_press);
+		mutex_init(&mbhc->codec_resource_lock);
+		mbhc->deinit_in_progress = true;
+		pr_info("P481 MBHC_SKIPPED phase=init_before_irq\n");
+		return 0;
+	}
+
 	/* Register event notifier */
 	mbhc->nblock.notifier_call = wcd_event_notify;
 	if (mbhc->mbhc_cb->register_notifier) {
@@ -2137,6 +2157,11 @@ EXPORT_SYMBOL(wcd_mbhc_init);
 void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 {
 	struct snd_soc_component *component = mbhc->component;
+
+	if (p481_mbhc_disabled()) {
+		mutex_destroy(&mbhc->codec_resource_lock);
+		return;
+	}
 
 	mbhc->mbhc_cb->free_irq(component, mbhc->intr_ids->mbhc_sw_intr, mbhc);
 	mbhc->mbhc_cb->free_irq(component, mbhc->intr_ids->mbhc_btn_press_intr,
