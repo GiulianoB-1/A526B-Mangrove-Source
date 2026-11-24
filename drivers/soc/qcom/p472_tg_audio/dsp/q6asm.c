@@ -8518,8 +8518,9 @@ int q6asm_memory_map(struct audio_client *ac, phys_addr_t buf_add, int dir,
 	}
 
 	rc = wait_event_timeout(ac->mem_wait,
-			(atomic_read(&ac->mem_state) >= 0 &&
-			 ac->port[dir].tmp_hdl),
+			(atomic_read(&ac->mem_state) > 0 ||
+			 (atomic_read(&ac->mem_state) == 0 &&
+			  READ_ONCE(ac->port[dir].tmp_hdl))),
 			msecs_to_jiffies(TIMEOUT_MS));
 	if (!rc) {
 		pr_err("%s: timeout. waited for memory_map\n", __func__);
@@ -8763,8 +8764,9 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 	}
 
 	rc = wait_event_timeout(ac->mem_wait,
-			(atomic_read(&ac->mem_state) >= 0 &&
-			 ac->port[dir].tmp_hdl),
+			(atomic_read(&ac->mem_state) > 0 ||
+			 (atomic_read(&ac->mem_state) == 0 &&
+			  READ_ONCE(ac->port[dir].tmp_hdl))),
 			msecs_to_jiffies(TIMEOUT_MS));
 	if (!rc) {
 		pr_err("%s: timeout. waited for memory_map\n", __func__);
@@ -8773,7 +8775,7 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 		goto fail_cmd;
 	}
 	if (atomic_read(&ac->mem_state) > 0) {
-		pr_err("%s DSP returned error for memory_map [%s]\n",
+		pr_err("P485 ASM_MAP_ERROR %s DSP returned error for memory_map [%s]\n",
 			__func__, adsp_err_get_err_str(
 			atomic_read(&ac->mem_state)));
 		rc = adsp_err_get_lnx_err_code(

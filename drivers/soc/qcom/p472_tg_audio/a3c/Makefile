@@ -32,3 +32,6 @@ obj-$(CONFIG_P480_A3C) += msm-audio-effects-q6-v2.o msm-qti-pp-config.o
 obj-$(CONFIG_P480_A3C) += platform_init.o kona.o p481_diag.o codecs/
 
 obj-$(CONFIG_P480_A3C) += msm-pcm-voice-v2.o
+
+# Match A3b conditional codec header layout for A3c consumers.
+subdir-ccflags-$(CONFIG_P480_A3C) += -DCONFIG_SND_SOC_IMPED_SENSING=1

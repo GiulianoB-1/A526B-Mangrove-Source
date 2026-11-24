@@ -412,7 +412,6 @@ jobs:
               sha256sum -c SHA256SUMS)
           done
           echo 'P480 twins on P479 final HLT boot; P479 control reported, NO FLASH.' >> "$GITHUB_STEP_SUMMARY"
-          sha256sum package/A3C/MANGROVE-P484-A3C-HLT.boot.img
           rm -rf package/archive package/input
       - name: Save P479 control and template provenance audits
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.p480_twins && !inputs.p480_compare) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[P480-REPACK-CORRECT-VERMAGIC]')) }}
@@ -536,10 +535,8 @@ jobs:
           grep -aFq 'P480 A3c INIT_MOVED fn=msm_int_audrx_init' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c AUDRX_INIT rc=0' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c PORT_MAP=' out_A3C/arch/arm64/boot/Image
-          grep -aFq 'P480 A3c ROUTE_SKIPPED sink=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c ROUTE_KEPT sink=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c KCONTROLS count=' out_A3C/arch/arm64/boot/Image
-          grep -aFq 'reason=SUPPLY_SINK_FROM_NON_SUPPLY' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c SND_CARD_REGISTER rc=' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P481 CARD_GATED default=0' out_A3C/arch/arm64/boot/Image
@@ -561,6 +558,7 @@ jobs:
           done
           python3 ci/p483_voice_audit.py out_A3C package/A3C
           python3 ci/p484_audio_audit.py out_A3C package/A3C
+          python3 ci/p485_audio_audit.py out_A3C package/A3C
           for marker in 'P483 VOICE_INIT rc=' 'P483 CVD_VERSION value=' 'P483 VOICE_AUX node=' 'P483 VOICE_KCONTROLS count=' 'P483 CARD_AUTO adsp_ready=1' 'P483 CARD_POLICY auto=' 'P483 BOLERO_MACRO_INACTIVE_ALLOWED' 'P483 BOLERO_UNCLOCKED reason='; do
             grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
           done
@@ -608,7 +606,7 @@ jobs:
             --kernel package/input/A3C.gz \
             --native-image out_A3C/arch/arm64/boot/Image \
             --variant A3C \
-            --output package/A3C/MANGROVE-P484-A3C-HLT.boot.img \
+            --output package/A3C/MANGROVE-P485-A3C-HLT.boot.img \
             --report package/A3C/P480-A3C-init-order-repack.json
           python3 - <<'PY'
           import json
@@ -637,7 +635,7 @@ jobs:
           from pathlib import Path
           from ci.p480_boot_repack import parse_boot
 
-          new_boot = Path('package/A3C/MANGROVE-P484-A3C-HLT.boot.img')
+          new_boot = Path('package/A3C/MANGROVE-P485-A3C-HLT.boot.img')
           old_boot = Path('package/input/P479-HLT.boot.img')
           native = Path('out_A3C/arch/arm64/boot/Image')
           meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
@@ -676,9 +674,7 @@ jobs:
               b'P480 A3c INIT_MOVED fn=msm_int_audrx_init',
               b'P480 A3c AUDRX_INIT rc=0',
               b'P480 A3c PORT_MAP=',
-              b'P480 A3c ROUTE_SKIPPED sink=',
               b'P480 A3c ROUTE_KEPT sink=',
-              b'P480 A3c ROUTES kept=',
               b'P480 A3c KCONTROLS count=',
               b'P481 CARD_GATED default=0',
               b'P481 CARD_ENABLE rc=',
@@ -719,7 +715,12 @@ jobs:
               b'P484 CDC_DMA_ROLLBACK',
               b'P484 TX_CHMAP',
               b'P484 BOLERO_ACCESS',
-              b'reason=SUPPLY_SINK_FROM_NON_SUPPLY',
+              b'P485 TX_DAPM',
+              b'P485 HPH_VOLUME',
+              b'P485 HPH_IMPEDANCE',
+              b'P485 MBHC_DUMP',
+              b'P485 ASM_MAP_ERROR',
+              b'P485 ROUTES kept=',
               b'P480 A3c SND_CARD_REGISTER rc=',
               b'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s',
           ]
@@ -760,15 +761,17 @@ jobs:
           cp ci/P482-RESOURCE-MANAGER-REVIEW.md package/A3C/
           cp ci/P483-REVIEW.md package/A3C/
           cp ci/P484-REVIEW.md package/A3C/
+          cp ci/P485-REVIEW.md ci/P485-DAPM-REGISTER-DIFF.json ci/P485-DAPM-ROUTES-EXPECTED.csv ci/P485-Q6-RETURN-AUDIT.csv package/A3C/
           cp ci/p480_collect_audio_readonly.sh package/A3C/
-          echo 'P484 real MBHC calls, scoped diagnostics, CDC DMA vote ownership and ADM/calibration fixes; hardware validation pending. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum MANGROVE-P484-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt P484-REVIEW.md P484-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'P485 TG TX DAPM and A52 impedance volume; hardware validation pending. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P485-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt P484-REVIEW.md P484-symbols.txt P485-REVIEW.md P485-DAPM-REGISTER-DIFF.json P485-DAPM-ROUTES-EXPECTED.csv P485-Q6-RETURN-AUDIT.csv P485-proof.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          sha256sum package/A3C/MANGROVE-P485-A3C-HLT.boot.img
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: P484-A3C-FINAL-P479-${{ github.sha }}
+          name: P485-A3C-FINAL-P479-${{ github.sha }}
           path: |
             package/A3C/
             p480-init-order-audit.json

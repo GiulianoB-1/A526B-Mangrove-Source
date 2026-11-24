@@ -8017,54 +8017,11 @@ keep:
 	return 0;
 }
 
-/* The shared lagoon DT includes split TX endpoints that WCD938x
- * does not expose, and five invalid mic-to-supply connections.
- * Only the explicit incompatibilities below may be pruned.
- */
-static bool p480_legacy_adc_output(const char *name)
+/* TG exposes all r02 ADC outputs and MICBIAS signal widgets. */
+static int p485_validate_wcd938x_routes(struct snd_soc_card *card)
 {
-	static const char * const names[] = {
-		"ADC1_OUTPUT", "ADC2_OUTPUT", "ADC3_OUTPUT", "ADC4_OUTPUT",
-	};
-	int i;
-
-	if (!name)
-		return false;
-	for (i = 0; i < ARRAY_SIZE(names); i++)
-		if (!strcmp(name, names[i]))
-			return true;
-	return false;
-}
-
-/* WCD938x MIC BIAS widgets are supplies, Analog Mic widgets are not.
- * Match only the five directed r02 pairs rejected by 5.10 DAPM.
- * Never remove AMIC <- MIC BIAS, other pairs, or the reverse direction.
- */
-static bool p480_invalid_micbias_route(const struct snd_soc_dapm_route *route)
-{
-	static const char * const pairs[][2] = {
-		{"MIC BIAS1", "Analog Mic1"},
-		{"MIC BIAS2", "Analog Mic2"},
-		{"MIC BIAS3", "Analog Mic3"},
-		{"MIC BIAS3", "Analog Mic4"},
-		{"MIC BIAS4", "Analog Mic5"},
-	};
-	int i;
-
-	if (!route->sink || !route->source)
-		return false;
-	for (i = 0; i < ARRAY_SIZE(pairs); i++)
-		if (!strcmp(route->sink, pairs[i][0]) &&
-		    !strcmp(route->source, pairs[i][1]))
-			return true;
-	return false;
-}
-
-static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
-{
-	struct snd_soc_dapm_route *routes;
-	bool has_wcd938x = false, has_wcd937x = false;
-	int i, j, kept = 0, skipped = 0;
+	bool has_wcd938x = false;
+	int i, j;
 
 	/* Match genuine registered AUX component drivers using the very same
 	 * OF descriptors ASoC will bind; do not infer from a board name.
@@ -8084,15 +8041,12 @@ static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
 		driver = dai->component->driver->name;
 		if (driver && !strncmp(driver, "wcd938x", 7))
 			has_wcd938x = true;
-		if (driver && !strncmp(driver, "wcd937x", 7))
-			has_wcd937x = true;
 	}
 	/* A retained link could also bind a WCD937x codec. */
 	for (i = 0; i < card->num_links; i++)
 		for (j = 0; j < card->dai_link[i].num_codecs; j++) {
 			struct snd_soc_dai *dai = snd_soc_find_dai_with_mutex(
 						&card->dai_link[i].codecs[j]);
-			const char *driver;
 
 			if (!dai || !dai->component || !dai->component->driver) {
 				dev_warn(card->dev,
@@ -8100,48 +8054,19 @@ static int p480_filter_wcd938x_routes(struct snd_soc_card *card)
 					 card->dai_link[i].name, j);
 				return -EPROBE_DEFER;
 			}
-			driver = dai->component->driver->name;
-			if (driver && !strncmp(driver, "wcd937x", 7))
-				has_wcd937x = true;
 		}
 
-	/* snd_soc_of_parse_audio_routing allocated these routes for this
-	 * probe. Copy rather than write through a const pointer.
-	 */
-	if (!has_wcd938x || has_wcd937x) {
-		dev_info(card->dev, "P480 A3c ROUTES kept=%d skipped=0\n",
-			 card->num_of_dapm_routes);
-		return 0;
+
+	if (has_wcd938x && card->num_of_dapm_routes != 27) {
+		dev_err(card->dev, "P485 ROUTES unexpected count=%d\n",
+			card->num_of_dapm_routes);
+		return -EINVAL;
 	}
-	routes = devm_kcalloc(card->dev, card->num_of_dapm_routes,
-			     sizeof(*routes), GFP_KERNEL);
-	if (!routes)
-		return -ENOMEM;
-	for (i = 0; i < card->num_of_dapm_routes; i++) {
-		const struct snd_soc_dapm_route *route = &card->of_dapm_routes[i];
-
-		if (p480_legacy_adc_output(route->sink) ||
-		    p480_legacy_adc_output(route->source)) {
-			dev_info(card->dev,
-				 "P480 A3c ROUTE_SKIPPED sink=%s source=%s reason=WCD937X_ONLY_WIDGET\n",
-				 route->sink, route->source);
-			skipped++;
-			continue;
-		}
-		if (p480_invalid_micbias_route(route)) {
-			dev_info(card->dev,
-				 "P480 A3c ROUTE_SKIPPED sink=%s source=%s reason=SUPPLY_SINK_FROM_NON_SUPPLY\n",
-				 route->sink, route->source);
-			skipped++;
-			continue;
-		}
-		routes[kept++] = *route;
+	for (i = 0; i < card->num_of_dapm_routes; i++)
 		dev_info(card->dev, "P480 A3c ROUTE_KEPT sink=%s source=%s\n",
-			 route->sink, route->source);
-	}
-	card->of_dapm_routes = routes;
-	card->num_of_dapm_routes = kept;
-	dev_info(card->dev, "P480 A3c ROUTES kept=%d skipped=%d\n", kept, skipped);
+			 card->of_dapm_routes[i].sink, card->of_dapm_routes[i].source);
+	dev_info(card->dev, "P485 ROUTES kept=%d skipped=0\n",
+		 card->num_of_dapm_routes);
 	return 0;
 }
 
@@ -8299,7 +8224,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	ret = msm_init_aux_dev(pdev, card);
 	if (ret)
 		goto err;
-	ret = p480_filter_wcd938x_routes(card);
+	ret = p485_validate_wcd938x_routes(card);
 	if (ret)
 		goto err;
 	ret = p483_attach_voice_controls(pdev, card);

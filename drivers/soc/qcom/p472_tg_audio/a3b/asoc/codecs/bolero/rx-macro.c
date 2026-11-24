@@ -809,7 +809,8 @@ static int wcd_impedance_vol_put(struct snd_kcontrol *kcontrol,
 
 	val = (ucontrol->value.integer.value[0] + min) & mask;
 
-	pr_info("%s impedance_offset %d\n", __func__, wcd_impedance_offset);
+	pr_info_ratelimited("P485 HPH_VOLUME reg=0x%x requested=%ld offset=%d\n",
+		reg, ucontrol->value.integer.value[0], wcd_impedance_offset);
 
 	val += wcd_impedance_offset;
 	val = val << shift;
@@ -857,8 +858,7 @@ static void sec_wcd_imp_offset(struct snd_soc_component *component,
 					   int imped)
 {
 	wcd_impedance_offset = imped;
-	pr_info("%s: selected impedance offset = %d\n",
-			__func__, wcd_impedance_offset);
+	pr_info("P485 HPH_IMPEDANCE offset=%d\n", wcd_impedance_offset);
 }
 #endif
 

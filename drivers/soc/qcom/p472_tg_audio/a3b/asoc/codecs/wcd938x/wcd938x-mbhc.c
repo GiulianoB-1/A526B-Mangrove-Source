@@ -993,9 +993,9 @@ static int p484_dump_regs(struct wcd_mbhc *mbhc, const char *src)
 	rc = p484_swr_dump_get(master);
 	if (rc)
 		goto fail;
-	rc = pm_runtime_resume_and_get(c->dev);
-	if (rc < 0)
-		goto master_put;
+	/* TX SWR master owns the PM and LPASS refs; codec PM is disabled. */
+	dev_info(c->dev, "P485 MBHC_DUMP master_held=1 codec_pm=%d\n",
+		 pm_runtime_enabled(c->dev));
 	dev_info(c->dev, "P484 MBHC_REGS src=%s hphl_swh=%d gnd_swh=%d gnd_det_en=%d enable_usbc_analog=%d mbhc_micbias=%d\n",
 		 src, mbhc->hphl_swh, mbhc->gnd_swh, mbhc->mbhc_cfg->gnd_det_en,
 		 mbhc->mbhc_cfg->enable_usbc_analog, mbhc->mbhc_cfg->mbhc_micbias);
@@ -1005,9 +1005,6 @@ static int p484_dump_regs(struct wcd_mbhc *mbhc, const char *src)
 			break;
 		dev_info(c->dev, "P484 MBHC_REGS src=%s reg=0x%x val=0x%x\n", src, regs[i], val);
 	}
-	pm_runtime_mark_last_busy(c->dev);
-	pm_runtime_put_autosuspend(c->dev);
-master_put:
 	p484_swr_dump_put(master);
 fail:
 	if (rc)

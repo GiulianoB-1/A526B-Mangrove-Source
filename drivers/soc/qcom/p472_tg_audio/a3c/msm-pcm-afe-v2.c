@@ -533,11 +533,12 @@ static int msm_afe_playback_copy(struct snd_pcm_substream *substream,
 				mem_map_handle,
 				snd_pcm_lib_period_bytes(prtd->substream));
 
-		if (ret) {
+		if (ret < 0) {
 			pr_err("%s: AFE proxy port write failed %d\n",
 				__func__, ret);
 			goto fail;
 		}
+		ret = 0; /* APR returns positive transmitted bytes on success. */
 		prtd->dsp_cnt++;
 	}
 fail:
@@ -575,12 +576,13 @@ static int msm_afe_capture_copy(struct snd_pcm_substream *substream,
 				snd_pcm_lib_period_bytes(prtd->substream),
 				port_id);
 
-		if (ret) {
+		if (ret < 0) {
 			pr_err("%s: AFE proxy port read failed %d\n",
 				__func__, ret);
 			goto fail;
 		}
 
+		ret = 0; /* APR returns positive transmitted bytes on success. */
 		prtd->dsp_cnt++;
 		ret = wait_event_timeout(prtd->read_wait,
 				atomic_read(&prtd->rec_bytes_avail),

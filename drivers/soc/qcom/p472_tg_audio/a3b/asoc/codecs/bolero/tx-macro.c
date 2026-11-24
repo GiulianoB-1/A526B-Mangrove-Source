@@ -1095,6 +1095,11 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 		return -EINVAL;
 
 	decimator = w->shift;
+	if (decimator == TX_MACRO_DEC0 && (event == SND_SOC_DAPM_PRE_PMU ||
+	    event == SND_SOC_DAPM_POST_PMU || event == SND_SOC_DAPM_POST_PMD))
+		pr_info_ratelimited("P485 TX_DAPM w=%s event=%s\n", w->name,
+			event == SND_SOC_DAPM_PRE_PMU ? "PRE_PMU" :
+			event == SND_SOC_DAPM_POST_PMU ? "POST_PMU" : "POST_PMD");
 
 	dev_dbg(component->dev, "%s(): widget = %s decimator = %u\n", __func__,
 			w->name, decimator);

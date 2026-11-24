@@ -1,0 +1,168 @@
+{
+  "tg": "6bf351bd",
+  "parent": "2a7b56d2f8f46841da8d668e1e5dbfda9f639cfd",
+  "functions": [
+    {
+      "name": "wcd938x_codec_enable_dmic",
+      "tg": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_AMIC_CTL, (0x01 << dmic_ctl_shift), 0x00);",
+        "snd_soc_component_update_bits(component, dmic2_left_en, 0x80, 0x80);",
+        "snd_soc_component_update_bits(component, dmic_clk_reg, dmic_clk_mask, (0x03 << dmic_clk_shift));",
+        "snd_soc_component_update_bits(component, dmic_clk_en_reg, 0x08, 0x08);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DMIC_CTL, 0x06, 0x06);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_AMIC_CTL, (0x01 << dmic_ctl_shift), (0x01 << dmic_ctl_shift));",
+        "snd_soc_component_update_bits(component, dmic2_left_en, 0x80, 0x00);",
+        "snd_soc_component_update_bits(component, dmic_clk_en_reg, 0x08, 0x00);"
+      ],
+      "p484": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_AMIC_CTL, (0x01 << dmic_ctl_shift), 0x00);",
+        "snd_soc_component_update_bits(component, dmic2_left_en, 0x80, 0x80);",
+        "snd_soc_component_update_bits(component, dmic_clk_reg, dmic_clk_mask, (0x03 << dmic_clk_shift));",
+        "snd_soc_component_update_bits(component, dmic_clk_en_reg, 0x08, 0x08);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DMIC_CTL, 0x06, 0x06);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_AMIC_CTL, (0x01 << dmic_ctl_shift), (0x01 << dmic_ctl_shift));",
+        "snd_soc_component_update_bits(component, dmic2_left_en, 0x80, 0x00);",
+        "snd_soc_component_update_bits(component, dmic_clk_en_reg, 0x08, 0x00);"
+      ]
+    },
+    {
+      "name": "wcd938x_tx_swr_ctrl",
+      "tg": [],
+      "p484": []
+    },
+    {
+      "name": "wcd938x_codec_enable_adc",
+      "tg": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x08);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F, mode);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0, mode << 4);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x20);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F, mode);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x40);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0, mode << 4);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x80);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x00);"
+      ],
+      "p484": []
+    },
+    {
+      "name": "wcd938x_enable_req",
+      "tg": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_REQ_CTL, 0x02, 0x02);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_REQ_CTL, 0x01, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x00);"
+      ],
+      "p484": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x08);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_REQ_CTL, 0x02, 0x02);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_REQ_CTL, 0x01, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F, mode);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0, mode << 4);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x20);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F, mode);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x40);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0, mode << 4);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x80);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x00);"
+      ]
+    },
+    {
+      "name": "wcd938x_tx_channel_config",
+      "equal": true,
+      "tg": [
+        "snd_soc_component_update_bits(component, reg, mask, val);"
+      ],
+      "p484": [
+        "snd_soc_component_update_bits(component, reg, mask, val);"
+      ]
+    },
+    {
+      "name": "wcd938x_micbias_control",
+      "equal": true,
+      "tg": [
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x80);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0xF0, 0xF0);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_TX_CLK_CTL, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB1_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB2_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB3_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB4_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x40);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x80);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0xC0);"
+      ],
+      "p484": [
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x80);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x00);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0xF0, 0xF0);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);",
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_CDC_ANA_TX_CLK_CTL, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB1_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB2_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB3_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, WCD938X_MICB4_TEST_CTL_2, 0x01, 0x01);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x40);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0x80);",
+        "snd_soc_component_update_bits(component, micb_reg, 0xC0, 0xC0);"
+      ]
+    },
+    {
+      "name": "__wcd938x_codec_enable_micbias",
+      "equal": true,
+      "tg": [],
+      "p484": []
+    },
+    {
+      "name": "__wcd938x_codec_enable_micbias_pullup",
+      "equal": true,
+      "tg": [],
+      "p484": []
+    },
+    {
+      "name": "wcd938x_get_adc_mode",
+      "equal": true,
+      "tg": [],
+      "p484": []
+    },
+    {
+      "name": "wcd938x_get_clk_rate",
+      "equal": true,
+      "tg": [],
+      "p484": []
+    },
+    {
+      "name": "wcd938x_set_swr_clk_rate",
+      "equal": true,
+      "tg": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_SWR_TX_CLK_RATE, mask, val);"
+      ],
+      "p484": [
+        "snd_soc_component_update_bits(component, WCD938X_DIGITAL_SWR_TX_CLK_RATE, mask, val);"
+      ]
+    }
+  ],
+  "notes": "TG register writes restored in ADC and REQ handlers; same micbias and channel programming. RX dummy and standalone force-micbias retained. Read32 API adapted to 5.10; ADC handler returns channel-config ret rather than unconditional zero."
+}
