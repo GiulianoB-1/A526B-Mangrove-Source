@@ -4510,6 +4510,8 @@ static const struct dev_pm_ops wcd938x_dev_pm_ops = {
 static int p472_a3b_logged_probe(struct platform_device *pdev)
 {
 	int rc=wcd938x_probe(pdev);
+	if (!rc)
+		p481_rpm_forbid_device(&pdev->dev);
 	dev_info(&pdev->dev,"P472 A3b PART WCD938X probe rc=%d\n",rc);
 	return rc;
 }
