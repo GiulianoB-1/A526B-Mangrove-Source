@@ -739,6 +739,9 @@ static void wcd938x_mbhc_moisture_config(struct wcd_mbhc *mbhc)
 {
 	struct snd_soc_component *component = mbhc->component;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd938x_mbhc_moisture_config\n");
+#endif
 	if ((mbhc->moist_rref == R_OFF) ||
 	    (mbhc->mbhc_cfg->enable_usbc_analog)) {
 		snd_soc_component_update_bits(component, WCD938X_MBHC_NEW_CTL_2,
@@ -763,6 +766,9 @@ static void wcd938x_mbhc_moisture_detect_en(struct wcd_mbhc *mbhc, bool enable)
 {
 	struct snd_soc_component *component = mbhc->component;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd938x_mbhc_moisture_detect_en\n");
+#endif
 	if (enable)
 		snd_soc_component_update_bits(component, WCD938X_MBHC_NEW_CTL_2,
 					0x0C, mbhc->moist_rref << 2);
@@ -776,6 +782,9 @@ static bool wcd938x_mbhc_get_moisture_status(struct wcd_mbhc *mbhc)
 	struct snd_soc_component *component = mbhc->component;
 	bool ret = false;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd938x_mbhc_get_moisture_status\n");
+#endif
 	if ((mbhc->moist_rref == R_OFF) ||
 	    (mbhc->mbhc_cfg->enable_usbc_analog)) {
 		snd_soc_component_update_bits(component, WCD938X_MBHC_NEW_CTL_2,
