@@ -3,6 +3,8 @@
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/p481_audio_diag.h>
+#include <linux/clk-provider.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -1006,6 +1008,47 @@ static int swrm_cmd_fifo_wr_cmd(struct swr_mstr_ctrl *swrm, u8 cmd_data,
 	return ret;
 }
 
+#ifdef CONFIG_P480_A3C
+static atomic_t p481_swr_faults = ATOMIC_INIT(0);
+
+/* Check transactions that can propagate an errno. The master's legacy
+ * raw u32/void register helpers cannot propagate failures; do not fake
+ * read values there. Resume/suspend are checked separately before MMIO.
+ */
+static int p481_swr_refuse(struct swr_mstr_ctrl *swrm, unsigned int reg,
+			   void *caller)
+{
+	dev_err_ratelimited(swrm->dev,
+		"P481 SWR_UNCLOCKED master=%s reg=0x%x caller=%pS state=%d clk_count=%d\n",
+		dev_name(swrm->dev), reg, caller, swrm->state, swrm->clk_ref_count);
+	if (atomic_inc_return(&p481_swr_faults) <= 5)
+		dump_stack();
+	return -EHOSTDOWN;
+}
+
+static bool p481_swr_votes_present(struct swr_mstr_ctrl *swrm)
+{
+	return (!swrm->lpass_core_hw_vote ||
+		__clk_get_enable_count(swrm->lpass_core_hw_vote)) &&
+		(!swrm->lpass_core_audio ||
+		__clk_get_enable_count(swrm->lpass_core_audio));
+}
+
+static int p481_swr_transaction_check(struct swr_mstr_ctrl *swrm,
+				      unsigned int reg, void *caller)
+{
+	if (!p481_card_armed())
+		return 0;
+	if (!READ_ONCE(swrm->dev_up) ||
+	    READ_ONCE(swrm->state) != SWR_MSTR_UP ||
+	    (is_swr_clk_needed(swrm) && READ_ONCE(swrm->clk_ref_count) <= 0) ||
+	    (!swrm->is_always_on && swrm->lpass_core_audio &&
+	     !__clk_get_enable_count(swrm->lpass_core_audio)))
+		return p481_swr_refuse(swrm, reg, caller);
+	return 0;
+}
+#endif
+
 static int swrm_read(struct swr_master *master, u8 dev_num, u16 reg_addr,
 		     void *buf, u32 len)
 {
@@ -1025,13 +1068,36 @@ static int swrm_read(struct swr_master *master, u8 dev_num, u16 reg_addr,
 	mutex_lock(&swrm->devlock);
 	if (!swrm->dev_up) {
 		mutex_unlock(&swrm->devlock);
+#ifdef CONFIG_P480_A3C
+		if (p481_card_armed())
+			return p481_swr_refuse(swrm, reg_addr, (void *)_RET_IP_);
+#endif
 		return 0;
 	}
 	mutex_unlock(&swrm->devlock);
 
+#ifdef CONFIG_P480_A3C
+	ret = pm_runtime_resume_and_get(swrm->dev);
+	if (ret < 0)
+		return ret;
+	if (swrm->req_clk_switch) {
+		ret = swrm_runtime_resume(swrm->dev);
+		if (ret < 0) {
+			pm_runtime_put_autosuspend(swrm->dev);
+			return ret;
+		}
+	}
+	ret = p481_swr_transaction_check(swrm, reg_addr, (void *)_RET_IP_);
+	if (ret) {
+		pm_runtime_mark_last_busy(swrm->dev);
+		pm_runtime_put_autosuspend(swrm->dev);
+		return ret;
+	}
+#else
 	pm_runtime_get_sync(swrm->dev);
 	if (swrm->req_clk_switch)
 		swrm_runtime_resume(swrm->dev);
+#endif
 	ret = swrm_cmd_fifo_rd_cmd(swrm, &val, dev_num, 0, reg_addr, len);
 
 	if (!ret)
@@ -1060,13 +1126,36 @@ static int swrm_write(struct swr_master *master, u8 dev_num, u16 reg_addr,
 	mutex_lock(&swrm->devlock);
 	if (!swrm->dev_up) {
 		mutex_unlock(&swrm->devlock);
+#ifdef CONFIG_P480_A3C
+		if (p481_card_armed())
+			return p481_swr_refuse(swrm, reg_addr, (void *)_RET_IP_);
+#endif
 		return 0;
 	}
 	mutex_unlock(&swrm->devlock);
 
+#ifdef CONFIG_P480_A3C
+	ret = pm_runtime_resume_and_get(swrm->dev);
+	if (ret < 0)
+		return ret;
+	if (swrm->req_clk_switch) {
+		ret = swrm_runtime_resume(swrm->dev);
+		if (ret < 0) {
+			pm_runtime_put_autosuspend(swrm->dev);
+			return ret;
+		}
+	}
+	ret = p481_swr_transaction_check(swrm, reg_addr, (void *)_RET_IP_);
+	if (ret) {
+		pm_runtime_mark_last_busy(swrm->dev);
+		pm_runtime_put_autosuspend(swrm->dev);
+		return ret;
+	}
+#else
 	pm_runtime_get_sync(swrm->dev);
 	if (swrm->req_clk_switch)
 		swrm_runtime_resume(swrm->dev);
+#endif
 	ret = swrm_cmd_fifo_wr_cmd(swrm, reg_val, dev_num, 0, reg_addr);
 
 	pm_runtime_put_autosuspend(swrm->dev);
@@ -1092,11 +1181,27 @@ static int swrm_bulk_write(struct swr_master *master, u8 dev_num, void *reg,
 	mutex_lock(&swrm->devlock);
 	if (!swrm->dev_up) {
 		mutex_unlock(&swrm->devlock);
+#ifdef CONFIG_P480_A3C
+		if (p481_card_armed())
+			return p481_swr_refuse(swrm, 0, (void *)_RET_IP_);
+#endif
 		return 0;
 	}
 	mutex_unlock(&swrm->devlock);
 
+#ifdef CONFIG_P480_A3C
+	ret = pm_runtime_resume_and_get(swrm->dev);
+	if (ret < 0)
+		return ret;
+	ret = p481_swr_transaction_check(swrm, 0, (void *)_RET_IP_);
+	if (ret) {
+		pm_runtime_mark_last_busy(swrm->dev);
+		pm_runtime_put_autosuspend(swrm->dev);
+		return ret;
+	}
+#else
 	pm_runtime_get_sync(swrm->dev);
+#endif
 	if (dev_num) {
 		swr_fifo_reg = kcalloc(len, sizeof(u32), GFP_KERNEL);
 		if (!swr_fifo_reg) {
@@ -3019,6 +3124,7 @@ static int swrm_probe(struct platform_device *pdev)
           "P472 A3b SWR %s slaves=%u enumerated\n",
           dev_name(&pdev->dev),n);
     }
+	p481_rpm_forbid_device(&pdev->dev);
 	return 0;
 err_mstr_init_fail:
 	swr_unregister_master(&swrm->master);
@@ -3117,6 +3223,9 @@ static int swrm_runtime_resume(struct device *dev)
 		__func__, swrm->state);
 	trace_printk("%s: pm_runtime: resume, state:%d\n",
 		__func__, swrm->state);
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=entry rc=0\n", dev_name(dev));
+#endif
 	mutex_lock(&swrm->reslock);
 
 	if (swrm_request_hw_vote(swrm, LPASS_HW_CORE, true)) {
@@ -3128,6 +3237,12 @@ static int swrm_runtime_resume(struct device *dev)
 		if (swrm->req_clk_switch)
 			swrm->req_clk_switch = false;
 		mutex_unlock(&swrm->reslock);
+#ifdef CONFIG_P480_A3C
+		dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=%d\n",
+			 dev_name(dev), p481_card_armed() ? -EHOSTDOWN : 0);
+		if (p481_card_armed())
+			return p481_swr_refuse(swrm, 0, (void *)_RET_IP_);
+#endif
 		return 0;
 	}
 	if (swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, true)) {
@@ -3136,6 +3251,13 @@ static int swrm_runtime_resume(struct device *dev)
 		aud_core_err = true;
 	}
 
+#ifdef CONFIG_P480_A3C
+	if (p481_card_armed() &&
+	    (aud_core_err || hw_core_err || !p481_swr_votes_present(swrm))) {
+		ret = p481_swr_refuse(swrm, 0, (void *)_RET_IP_);
+		goto exit;
+	}
+#endif
 	if ((swrm->state == SWR_MSTR_DOWN) ||
 	    (swrm->state == SWR_MSTR_SSR && swrm->dev_up)) {
 		if (swrm->clk_stop_mode0_supp) {
@@ -3145,6 +3267,10 @@ static int swrm_runtime_resume(struct device *dev)
 					pr_err("%s: irq data is NULL\n",
 						__func__);
 					mutex_unlock(&swrm->reslock);
+#ifdef CONFIG_P480_A3C
+					dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=%d\n",
+						 dev_name(dev), IRQ_NONE);
+#endif
 					return IRQ_NONE;
 				}
 				mutex_lock(&swrm->irq_lock);
@@ -3242,6 +3368,9 @@ exit:
 
 	trace_printk("%s: pm_runtime: resume done, state:%d\n",
 		__func__, swrm->state);
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=%d\n", dev_name(dev), ret);
+#endif
 	return ret;
 }
 
@@ -3256,12 +3385,18 @@ static int swrm_runtime_suspend(struct device *dev)
 	int current_state = 0;
 	struct irq_data *irq_data = NULL;
 
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=entry rc=0\n", dev_name(dev));
+#endif
 	trace_printk("%s: pm_runtime: suspend state: %d\n",
 		__func__, swrm->state);
 	dev_dbg(dev, "%s: pm_runtime: suspend state: %d\n",
 		__func__, swrm->state);
 	if (swrm->state == SWR_MSTR_SSR_RESET) {
 		swrm->state = SWR_MSTR_SSR;
+#ifdef CONFIG_P480_A3C
+		dev_info(dev, "P481 RPM dev=%s op=suspend phase=exit rc=0\n", dev_name(dev));
+#endif
 		return 0;
 	}
 	mutex_lock(&swrm->reslock);
@@ -3277,6 +3412,13 @@ static int swrm_runtime_suspend(struct device *dev)
 
 	if (swrm->is_always_on && swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, true))
 		aud_core_err = true;
+#ifdef CONFIG_P480_A3C
+	if (p481_card_armed() &&
+	    (hw_core_err || aud_core_err || !p481_swr_votes_present(swrm))) {
+		ret = p481_swr_refuse(swrm, 0, (void *)_RET_IP_);
+		goto exit;
+	}
+#endif
 	if ((current_state == SWR_MSTR_UP) ||
 	    (current_state == SWR_MSTR_SSR)) {
 
@@ -3372,6 +3514,9 @@ exit:
 	mutex_unlock(&swrm->reslock);
 	trace_printk("%s: pm_runtime: suspend done state: %d\n",
 		__func__, swrm->state);
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=exit rc=%d\n", dev_name(dev), ret);
+#endif
 	return ret;
 }
 #endif /* CONFIG_PM */
