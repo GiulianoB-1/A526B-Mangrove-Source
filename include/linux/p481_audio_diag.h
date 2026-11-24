@@ -12,6 +12,8 @@ bool p481_kona_card(const struct snd_soc_card *card);
 void p481_alive_start(void);
 void p481_rpm_forbid_device(struct device *dev);
 int p481_diag_register(void);
+void p483_card_auto_start(void);
+unsigned int p483_bolero_guard(void);
 #else
 static inline bool p481_card_armed(void) { return false; }
 static inline bool p481_mbhc_disabled(void) { return false; }

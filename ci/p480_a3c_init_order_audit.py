@@ -44,7 +44,10 @@ assert "int p480_kona_machine_init(void)" in machine
 assert "int __init p480_kona_machine_init(void)" not in machine
 assert "p480_kona_machine_init(" not in a3a
 assert "rc = p480_kona_machine_init();" in diag
-assert "__ATTR(card_enable, 0200, NULL, card_enable_store)" in diag
+assert "__ATTR_RW(card_enable)" in diag
+assert "q6core_is_adsp_ready()" in diag
+assert "a52_audio.card_enable=" in diag
+assert "p483_card_auto_start();" in a3a
 assert "return platform_driver_register(&msm_stub_driver)" in stub
 assert "audio_cal_register(" not in stub and "q6asm_" not in stub
 assert "late_initcall(p472_a2a_init)" in a2a
@@ -59,6 +62,7 @@ assert all(word in a3a for word in (
     "rc = p481_diag_register();",
 ))
 assert (a3a.index("rc = q6lsm_init();")
+        < a3a.index("rc = voice_init();")
         < a3a.index("rc = p480_audio_platform_init();")
         < a3a.index("rc = p481_diag_register();"))
 report = {
@@ -67,7 +71,7 @@ report = {
     "baseline_a3a": {"file":"dsp/p472_a3a_q6_init.c", "level":"late_initcall_sync (7s)"},
     "a3c_registration_macros": entries,
     "a3c_platform": "explicit in A3a after q6lsm; no standalone initcall",
-    "a3c_machine": "one-shot root card_enable after providers; no boot machine registration",
+    "a3c_machine": "automatic one-shot after providers and confirmed ADSP readiness; cmdline/sysfs recovery",
     "msm_stub": "device_initcall (6); registration-only stub codec, no cal/Q6 use",
     "total_a3c_c_files_scanned": len(list(a3c.rglob("*.c"))),
     "no_a3c_config": "All cal/A2a/A3a changes guarded by CONFIG_P480_A3C",

@@ -80,7 +80,7 @@ def main() -> None:
         "msm-pcm-routing-devdep", "msm-dai-q6-v2",
         "msm-dai-fe", "msm-dai-stub-v2",
         "msm-audio-effects-q6-v2", "msm-qti-pp-config",
-        "platform_init", "kona",
+        "platform_init", "kona", "msm-pcm-voice-v2",
     )
     for name in providers:
         check(name + ".o" in card_make, "native provider built-in: " + name)
@@ -165,12 +165,15 @@ def main() -> None:
           "p480_kona_machine_init(" not in a3a_init and
           "rc = p480_kona_machine_init();" in diag and
           "int p480_kona_machine_init(void)" in kona_source and
-          "__ATTR(card_enable, 0200, NULL, card_enable_store)" in diag and
+          "__ATTR_RW(card_enable)" in diag and
+          '"a52_audio.card_enable="' in diag and
+          "p483_card_auto_start();" in a3a_init and
           "WRITE_ONCE(card_attempted, true);" in diag and
           a3a_init.index("rc = q6lsm_init();") <
+          a3a_init.index("rc = voice_init();") <
           a3a_init.index("rc = p480_audio_platform_init();") <
           a3a_init.index("rc = p481_diag_register();"),
-          "A2a then A3a Q6 then A3c platform; machine gated by root sysfs")
+          "A2a then A3a Q6 then A3c platform; machine gated by ADSP-ready check and root sysfs recovery")
     check("CAL_REGISTER_SKIPPED reason=not_initialized" in cal_source and
           "if (!audio_cal_is_initialized())" in cal_source and
           "P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready" in a3a_init and
@@ -438,7 +441,7 @@ def main() -> None:
         check(any(name in line and why in line and "SOURCE_PREDICTION_ONLY" in line
                   for line in expected.splitlines()),
               "live-r02 source-only predicted MI2S skip: " + name)
-    check("MANGROVE-P482-A3C-HLT.boot.img" in package and
+    check("MANGROVE-P483-A3C-HLT.boot.img" in package and
           "P480-A3C-strings-proof.json" in package and
           "P480 A3c LINK_DIR_TRIM name=" in package and
           "P480 A3c ROUTES added=" in package and
@@ -449,6 +452,23 @@ def main() -> None:
           "existing_P480_NO_A3C_artifact_id" in package and
           "existing_P480_NO_A3C_artifact_unchanged" in package,
           "one A3C HLT output with strings/pins and explicit unchanged NO-A3C fallback")
+    voice = read("drivers/soc/qcom/p472_tg_audio/a3c/msm-pcm-voice-v2.c")
+    check("voc_get_cvd_version(cvd_version)" in voice and
+          "P483 VOICE_KCONTROLS" in voice and
+          "devm_snd_soc_register_component" in voice and
+          "voc_start_voice_call(" not in voice and
+          "voc_resume_voice_call(" not in voice and
+          ".pcm_construct" not in voice and
+          "p483_attach_voice_controls(pdev, card);" in kona_source and
+          '"msm-pcm-voice"' in kona_source and
+          "UNPORTED_OR_VOICE_LINK" in kona_source,
+          "P483 real CVD and control-only AUX without voice call PCM")
+    check("static bool card_enable = true;" in diag and
+          "q6core_is_adsp_ready()" in diag and
+          'a52_audio.card_enable=' in diag and
+          "static unsigned int bolero_guard = 1;" in diag and
+          "mode == 2" in bolero and "P483 BOLERO_MACRO_INACTIVE_ALLOWED" in bolero,
+          "P483 automatic recovery-gated card and TG default guard")
     print("P480 A3c source-only integration contracts PASS; no hardware validation")
 
 

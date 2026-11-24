@@ -10194,10 +10194,10 @@ int __init voice_init(void)
 		mutex_init(&common.voice[i].lock);
 	}
 
-	if (voice_init_cal_data())
-		pr_err("%s: Could not init cal data!\n", __func__);
-
-	if (rc == 0)
+	rc = voice_init_cal_data();
+	if (rc)
+		pr_err("%s: Could not init cal data! rc=%d\n", __func__, rc);
+	else
 		module_initialized = true;
 
 	pr_debug("%s: rc=%d\n", __func__, rc);

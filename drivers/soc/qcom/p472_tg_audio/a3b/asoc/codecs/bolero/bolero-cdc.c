@@ -94,38 +94,57 @@ static void bolero_ahb_read_device(char __iomem *io_base,
 }
 
 #ifdef CONFIG_P480_A3C
-/* Do not resume a second macro to conceal a bad access. Hold an existing
- * active target PM reference until the bus operation completes.
- * The VA vote reference is acquired separately by the caller.
+/* P483: retain the real power/VA reference floor in all modes.
+ * Mode 0 disables optional macro diagnostics; mode 1 follows TG;
+ * mode 2 additionally holds an already-active target PM reference.
  */
 static atomic_t p481_bolero_faults = ATOMIC_INIT(0);
+static unsigned long p483_inactive_seen;
+
 static int p481_bolero_access_check(struct bolero_priv *priv, u16 macro_id,
 				   u16 reg, const char *op,
 				   struct device **held, void *caller)
 {
-	struct device *target = NULL;
-	int rc = -EHOSTDOWN;
+	struct device *target;
+	const char *reason = "invalid_macro";
+	unsigned int mode = p483_bolero_guard();
+	int rc;
 
 	if (macro_id >= MAX_MACRO)
 		goto blocked;
 	target = priv->macro_params[macro_id].dev;
-	if (!target || !priv->macro_params[macro_id].io_base ||
-	    !priv->macro_params[VA_MACRO].dev ||
-	    !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
+	if (!target || !priv->macro_params[macro_id].io_base)
 		goto blocked;
-	/* Check manager-owned CCF references rather than global counts. */
-	if ((priv->lpass_core_hw_vote &&
-	     !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote)) ||
-	    (priv->lpass_audio_hw_vote &&
-	     !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote)))
+	reason = "va_rpm_fail";
+	if (!priv->macro_params[VA_MACRO].dev)
 		goto blocked;
-	rc = pm_runtime_get_if_active(target, true);
-	if (rc <= 0)
+	reason = "no_core_vote";
+	if (priv->lpass_core_hw_vote &&
+	    !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote))
 		goto blocked;
-	*held = target;
+	reason = "no_audio_vote";
+	if (priv->lpass_audio_hw_vote &&
+	    !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote))
+		goto blocked;
+	if (!bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
+		goto blocked;
+	if (mode == 2) {
+		reason = "target_inactive";
+		rc = pm_runtime_get_if_active(target, true);
+		if (rc <= 0)
+			goto blocked;
+		*held = target;
+	} else if (mode == 1 && !pm_runtime_active(target) &&
+		   !test_and_set_bit(macro_id, &p483_inactive_seen)) {
+		dev_info(priv->dev, "P483 BOLERO_MACRO_INACTIVE_ALLOWED macro=%d\n",
+			 macro_id);
+	}
 	return 0;
 
 blocked:
+	dev_err_ratelimited(priv->dev,
+		"P483 BOLERO_UNCLOCKED reason=%s op=%s macro=%u reg=0x%x caller=%pS\n",
+		reason, op, macro_id, reg, caller);
 	dev_err_ratelimited(priv->dev,
 		"P481 BOLERO_UNCLOCKED op=%s macro=%u reg=0x%x caller=%pS\n",
 		op, macro_id, reg, caller);
@@ -157,6 +176,9 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		ret = pm_runtime_resume_and_get(priv->macro_params[VA_MACRO].dev);
 		if (ret < 0) {
 			dev_err_ratelimited(priv->dev,
+				"P483 BOLERO_UNCLOCKED reason=va_rpm_fail op=read macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
+				macro_id, reg, (void *)_RET_IP_, ret);
+			dev_err_ratelimited(priv->dev,
 				"P481 BOLERO_UNCLOCKED op=read macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
 				macro_id, reg, (void *)_RET_IP_, ret);
 			if (atomic_inc_return(&p481_bolero_faults) <= 5)
@@ -165,17 +187,10 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		}
 		va_held = true;
 	}
-	if (p481_card_armed()) {
-		ret = p481_bolero_access_check(priv, macro_id, reg, "read", &held,
-					       (void *)_RET_IP_);
-		if (ret)
-			goto err;
-	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
-		dev_err_ratelimited(priv->dev, "P481 BOLERO_UNCLOCKED op=early macro=%u reg=0x%x caller=%pS\n",
-				    macro_id, reg, (void *)_RET_IP_);
-		ret = -EHOSTDOWN;
+	ret = p481_bolero_access_check(priv, macro_id, reg, "read", &held,
+				       (void *)_RET_IP_);
+	if (ret)
 		goto err;
-	}
 #else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
@@ -249,6 +264,9 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		ret = pm_runtime_resume_and_get(priv->macro_params[VA_MACRO].dev);
 		if (ret < 0) {
 			dev_err_ratelimited(priv->dev,
+				"P483 BOLERO_UNCLOCKED reason=va_rpm_fail op=write macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
+				macro_id, reg, (void *)_RET_IP_, ret);
+			dev_err_ratelimited(priv->dev,
 				"P481 BOLERO_UNCLOCKED op=write macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
 				macro_id, reg, (void *)_RET_IP_, ret);
 			if (atomic_inc_return(&p481_bolero_faults) <= 5)
@@ -257,17 +275,10 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		}
 		va_held = true;
 	}
-	if (p481_card_armed()) {
-		ret = p481_bolero_access_check(priv, macro_id, reg, "write", &held,
-					       (void *)_RET_IP_);
-		if (ret)
-			goto err;
-	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
-		dev_err_ratelimited(priv->dev, "P481 BOLERO_UNCLOCKED op=early macro=%u reg=0x%x caller=%pS\n",
-				    macro_id, reg, (void *)_RET_IP_);
-		ret = -EHOSTDOWN;
+	ret = p481_bolero_access_check(priv, macro_id, reg, "write", &held,
+				       (void *)_RET_IP_);
+	if (ret)
 		goto err;
-	}
 #else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);

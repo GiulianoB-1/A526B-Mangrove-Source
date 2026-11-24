@@ -20,6 +20,7 @@ int msm_pcm_noirq_init(void);
 int msm_pcm_dsp_init(void);
 int msm_soc_routing_platform_init(void);
 int msm_pcm_voice_init(void);
+bool p483_voice_platform_ready(void);
 int msm_pcm_voip_init(void);
 int msm_transcode_loopback_init(void);
 int msm_cpe_lsm_init(void);

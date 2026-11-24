@@ -43,6 +43,7 @@
 #include "codecs/bolero/wsa-macro.h"
 #include "kona-port-config.h"
 #include "msm_dailink.h"
+#include "platform_init.h"
 
 #define DRV_NAME "kona-asoc-snd"
 #define __CHIPSET__ "KONA "
@@ -7522,7 +7523,7 @@ static int msm_init_aux_dev(struct platform_device *pdev,
 		dev_warn(&pdev->dev, "P480 A3c AUX_MISSING no codec phandles\n");
 		return -EPROBE_DEFER;
 	}
-	aux = devm_kcalloc(&pdev->dev, count, sizeof(*aux), GFP_KERNEL);
+	aux = devm_kcalloc(&pdev->dev, count + 1, sizeof(*aux), GFP_KERNEL);
 	conf = devm_kcalloc(&pdev->dev, count, sizeof(*conf), GFP_KERNEL);
 	if (!aux || !conf)
 		return -ENOMEM;
@@ -7551,6 +7552,43 @@ static int msm_init_aux_dev(struct platform_device *pdev,
 	card->num_configs = count;
 	card->aux_dev = aux;
 	card->codec_conf = conf;
+	return 0;
+}
+
+/* No voice DAI link is retained. Attach the actual platform OF component
+ * after the WCD-only topology check, so ASoC binds its controls without PCM.
+ */
+static void p483_voice_node_put(void *data)
+{
+	of_node_put(data);
+}
+
+static int p483_attach_voice_controls(struct platform_device *pdev,
+				      struct snd_soc_card *card)
+{
+	struct device_node *node;
+	int index, rc;
+
+	if (!p483_voice_platform_ready()) {
+		dev_err(&pdev->dev, "P483 VOICE_AUX skipped reason=voice_init_failed\n");
+		return 0;
+	}
+	index = of_property_match_string(pdev->dev.of_node,
+					 "asoc-platform-names", "msm-pcm-voice");
+	if (index < 0)
+		return index;
+	node = of_parse_phandle(pdev->dev.of_node, "asoc-platform", index);
+	if (!node)
+		return -ENODEV;
+	if (!of_device_is_compatible(node, "qcom,msm-pcm-voice")) {
+		of_node_put(node);
+		return -EINVAL;
+	}
+	rc = devm_add_action_or_reset(&pdev->dev, p483_voice_node_put, node);
+	if (rc)
+		return rc;
+	card->aux_dev[card->num_aux_devs++].dlc.of_node = node;
+	dev_info(&pdev->dev, "P483 VOICE_AUX node=%pOF controls_only=1\n", node);
 	return 0;
 }
 
@@ -8243,6 +8281,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	if (ret)
 		goto err;
 	ret = p480_filter_wcd938x_routes(card);
+	if (ret)
+		goto err;
+	ret = p483_attach_voice_controls(pdev, card);
 	if (ret)
 		goto err;
 

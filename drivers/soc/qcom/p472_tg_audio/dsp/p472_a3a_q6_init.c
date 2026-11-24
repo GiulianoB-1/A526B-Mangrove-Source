@@ -27,6 +27,7 @@ extern void q6lsm_exit(void);
 extern bool p472_a2a_ready(void);
 extern bool audio_cal_is_initialized(void);
 extern int __init p480_audio_platform_init(void);
+extern int __init voice_init(void);
 #endif
 
 static unsigned int p472_a3a_checks;
@@ -90,6 +91,9 @@ static int __init p472_a3a_start(void)
 	pr_info("P472 A3a Q6 lsm registered rc=0\n");
 
 #ifdef CONFIG_P480_A3C
+	rc = voice_init();
+	pr_info("P483 VOICE_INIT rc=%d\n", rc);
+	/* A voice failure must not tear down the already-working services. */
 	/* Order: calibrated A2a -> A3a services -> A3c platform -> machine.
 	 * A3c is non-critical and must never tear down the working Q6 stack.
 	 */
@@ -99,13 +103,14 @@ static int __init p472_a3a_start(void)
 		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d; A3a preserved\n", rc);
 		goto a3c_nonfatal;
 	}
-	/* P481: keep the providers, but never bind the card at boot. */
+	/* P483: publish recovery controls before starting the ADSP-ready gate. */
 	rc = p481_diag_register();
 	if (rc) {
 		pr_err("P480 A3c INIT_FAIL stage=diag_sysfs rc=%d; A3a preserved\n", rc);
 		goto a3c_nonfatal;
 	}
 	pr_info("P481 INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=0\n");
+	p483_card_auto_start();
 a3c_nonfatal:
 #endif
 

@@ -30,3 +30,5 @@ obj-$(CONFIG_P480_A3C) += msm-pcm-routing-v2.o msm-pcm-routing-devdep.o
 obj-$(CONFIG_P480_A3C) += msm-dai-q6-v2.o msm-dai-fe.o msm-dai-stub-v2.o
 obj-$(CONFIG_P480_A3C) += msm-audio-effects-q6-v2.o msm-qti-pp-config.o
 obj-$(CONFIG_P480_A3C) += platform_init.o kona.o p481_diag.o codecs/
+
+obj-$(CONFIG_P480_A3C) += msm-pcm-voice-v2.o

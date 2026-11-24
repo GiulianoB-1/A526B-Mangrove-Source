@@ -558,6 +558,10 @@ jobs:
           for marker in 'P482 HW_VOTE op=' 'P482 AFE_HW_VOTE block=' 'P482 AFE_HW_UNVOTE block=' 'P482 MBHC_IRQ_BLOCKED'; do
             grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
           done
+          python3 ci/p483_voice_audit.py out_A3C package/A3C
+          for marker in 'P483 VOICE_INIT rc=' 'P483 CVD_VERSION value=' 'P483 VOICE_AUX node=' 'P483 VOICE_KCONTROLS count=' 'P483 CARD_AUTO adsp_ready=1' 'P483 CARD_POLICY auto=' 'P483 BOLERO_MACRO_INACTIVE_ALLOWED' 'P483 BOLERO_UNCLOCKED reason='; do
+            grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
+          done
           # Prove the caller uses the external A3b symbols, not inline stubs.
           llvm-nm out_A3C/drivers/soc/qcom/p472_tg_audio/a3c/kona.o > package/A3C/P480-kona-symbols.txt
           grep -Eq '[[:space:]]U[[:space:]]+bolero_set_port_map$' package/A3C/P480-kona-symbols.txt
@@ -602,7 +606,7 @@ jobs:
             --kernel package/input/A3C.gz \
             --native-image out_A3C/arch/arm64/boot/Image \
             --variant A3C \
-            --output package/A3C/MANGROVE-P482-A3C-HLT.boot.img \
+            --output package/A3C/MANGROVE-P483-A3C-HLT.boot.img \
             --report package/A3C/P480-A3C-init-order-repack.json
           python3 - <<'PY'
           import json
@@ -631,7 +635,7 @@ jobs:
           from pathlib import Path
           from ci.p480_boot_repack import parse_boot
 
-          new_boot = Path('package/A3C/MANGROVE-P482-A3C-HLT.boot.img')
+          new_boot = Path('package/A3C/MANGROVE-P483-A3C-HLT.boot.img')
           old_boot = Path('package/input/P479-HLT.boot.img')
           native = Path('out_A3C/arch/arm64/boot/Image')
           meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
@@ -691,6 +695,14 @@ jobs:
               b'P482 AFE_HW_VOTE block=',
               b'P482 AFE_HW_UNVOTE block=',
               b'P482 MBHC_IRQ_BLOCKED',
+              b'P483 VOICE_INIT rc=',
+              b'P483 CVD_VERSION value=',
+              b'P483 VOICE_AUX node=',
+              b'P483 VOICE_KCONTROLS count=',
+              b'P483 CARD_AUTO adsp_ready=1',
+              b'P483 CARD_POLICY auto=',
+              b'P483 BOLERO_MACRO_INACTIVE_ALLOWED',
+              b'P483 BOLERO_UNCLOCKED reason=',
               b'reason=SUPPLY_SINK_FROM_NON_SUPPLY',
               b'P480 A3c SND_CARD_REGISTER rc=',
               b'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s',
@@ -730,15 +742,16 @@ jobs:
           cp ci/P480-A3C-DAPM-FIX4-REVIEW.md package/A3C/
           cp ci/P481-DIAGNOSTIC-REVIEW.md package/A3C/
           cp ci/P482-RESOURCE-MANAGER-REVIEW.md package/A3C/
+          cp ci/P483-REVIEW.md package/A3C/
           cp ci/p480_collect_audio_readonly.sh package/A3C/
-          echo 'P482 real LPASS vote manager with P481 card gate; incomplete raw SWR guard coverage. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum MANGROVE-P482-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'P483 automatic ADSP-ready card, real voice controls, TG Bolero guard; incomplete raw SWR guard coverage. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P483-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: P482-A3C-DIAGNOSTIC-FINAL-P479-${{ github.sha }}
+          name: P483-A3C-FINAL-P479-${{ github.sha }}
           path: |
             package/A3C/
             p480-init-order-audit.json

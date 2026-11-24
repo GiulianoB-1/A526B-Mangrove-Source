@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* P481 one-shot manual sound-card registration. No calibration or boot changes. */
+/* P483 automatic card registration with ADSP-ready gate and manual recovery. */
 #include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/jiffies.h>
+#include <dsp/q6core.h>
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/mutex.h>
@@ -15,6 +18,25 @@ extern int p480_kona_machine_init(void);
 extern struct bus_type soundwire_type;
 static DEFINE_MUTEX(p481_lock);
 static bool card_attempted;
+static bool card_enable = true;
+static unsigned int bolero_guard = 1;
+static unsigned int auto_checks;
+
+unsigned int p483_bolero_guard(void)
+{
+	return READ_ONCE(bolero_guard);
+}
+
+static int __init p483_card_enable_setup(char *str)
+{
+	bool enabled;
+
+	if (kstrtobool(str, &enabled))
+		return 0;
+	card_enable = enabled;
+	return 1;
+}
+__setup("a52_audio.card_enable=", p483_card_enable_setup);
 static bool mbhc_enable = true;
 static bool rpm_forbid;
 static bool dapm_idle_off;
@@ -123,26 +145,23 @@ P481_BOOL_ATTR(mbhc_enable);
 P481_BOOL_ATTR(rpm_forbid);
 P481_BOOL_ATTR(dapm_idle_off);
 
-static ssize_t card_enable_store(struct kobject *kobj,
-				 struct kobj_attribute *attr,
-				 const char *buf, size_t count)
+/* Both automatic and manual paths use the same one-shot gate. */
+static int p483_register_card(void)
 {
-	unsigned int val;
 	int rc;
 
-	if (kstrtouint(buf, 0, &val) || val != 1)
-		return -EINVAL;
 	mutex_lock(&p481_lock);
 	if (card_attempted) {
 		mutex_unlock(&p481_lock);
 		return -EBUSY;
 	}
+	if (!card_enable) {
+		mutex_unlock(&p481_lock);
+		return -ECANCELED;
+	}
 	WRITE_ONCE(card_attempted, true);
 	mutex_unlock(&p481_lock);
 
-	/* The knobs are now frozen. Resume/hold already-probed devices
-	 * before binding the machine. Later probes use the same policy.
-	 */
 	if (READ_ONCE(rpm_forbid)) {
 		bus_for_each_dev(&platform_bus_type, NULL, NULL, p481_hold_existing);
 		bus_for_each_dev(&soundwire_type, NULL, NULL, p481_hold_existing);
@@ -151,15 +170,86 @@ static ssize_t card_enable_store(struct kobject *kobj,
 	pr_info("P481 CARD_ENABLE rc=%d\n", rc);
 	if (rc)
 		pr_err("P480 A3c INIT_FAIL stage=machine rc=%d; A3a preserved\n", rc);
-	if (rc)
-		return rc;
+	return rc;
+}
+
+static void p483_auto_work(struct work_struct *work);
+static DECLARE_DELAYED_WORK(p483_card_job, p483_auto_work);
+
+static void p483_auto_work(struct work_struct *work)
+{
+	if (!READ_ONCE(card_enable) || READ_ONCE(card_attempted))
+		return;
+	/* Never register a machine when recovery skipped ADSP startup. */
+	if (!q6core_is_adsp_ready()) {
+		if (++auto_checks < 60)
+			schedule_delayed_work(&p483_card_job, HZ);
+		else
+			pr_err("P483 CARD_AUTO skipped reason=adsp_not_ready\n");
+		return;
+	}
+	pr_info("P483 CARD_AUTO adsp_ready=1\n");
+	p483_register_card();
+}
+
+void p483_card_auto_start(void)
+{
+	if (READ_ONCE(card_enable))
+		schedule_delayed_work(&p483_card_job, 0);
+}
+
+static ssize_t card_enable_show(struct kobject *kobj,
+			       struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", READ_ONCE(card_enable));
+}
+
+static ssize_t card_enable_store(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 const char *buf, size_t count)
+{
+	unsigned int val;
+
+	if (kstrtouint(buf, 0, &val) || val > 1)
+		return -EINVAL;
+	mutex_lock(&p481_lock);
+	if (card_attempted) {
+		mutex_unlock(&p481_lock);
+		return -EBUSY;
+	}
+	WRITE_ONCE(card_enable, !!val);
+	mutex_unlock(&p481_lock);
+	if (val)
+		mod_delayed_work(system_wq, &p483_card_job, 0);
+	else
+		cancel_delayed_work_sync(&p483_card_job);
 	return count;
 }
-static struct kobj_attribute card_enable_attr = __ATTR(card_enable, 0200, NULL, card_enable_store);
+static struct kobj_attribute card_enable_attr = __ATTR_RW(card_enable);
+
+static ssize_t bolero_guard_show(struct kobject *kobj,
+				struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", p483_bolero_guard());
+}
+
+static ssize_t bolero_guard_store(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 const char *buf, size_t count)
+{
+	unsigned int val;
+
+	if (kstrtouint(buf, 0, &val) || val > 2)
+		return -EINVAL;
+	WRITE_ONCE(bolero_guard, val);
+	pr_info_ratelimited("P483 BOLERO_GUARD mode=%u\n", val);
+	return count;
+}
+static struct kobj_attribute bolero_guard_attr = __ATTR_RW(bolero_guard);
 
 static struct attribute *audio_attrs[] = {
 	&card_enable_attr.attr, &mbhc_enable_attr.attr, &rpm_forbid_attr.attr,
-	&dapm_idle_off_attr.attr, NULL,
+	&dapm_idle_off_attr.attr, &bolero_guard_attr.attr, NULL,
 };
 static const struct attribute_group audio_group = { .attrs = audio_attrs };
 
@@ -176,6 +266,9 @@ int p481_diag_register(void)
 		audio_kobj = NULL;
 		return rc;
 	}
-	pr_info("P481 CARD_GATED default=0\n");
+	if (!READ_ONCE(card_enable))
+		pr_info("P481 CARD_GATED default=0\n");
+	pr_info("P483 CARD_POLICY auto=%u guard=%u\n",
+		READ_ONCE(card_enable), p483_bolero_guard());
 	return 0;
 }
