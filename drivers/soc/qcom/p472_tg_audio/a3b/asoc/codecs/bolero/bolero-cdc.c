@@ -167,10 +167,15 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		}
 		va_held = true;
 	}
-	ret = p481_bolero_access_check(priv, macro_id, reg, "read", &held,
-				       (void *)_RET_IP_);
-	if (ret)
+	if (p481_card_armed()) {
+		ret = p481_bolero_access_check(priv, macro_id, reg, "read", &held,
+					       (void *)_RET_IP_);
+		if (ret)
+			goto err;
+	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
+		ret = -EHOSTDOWN;
 		goto err;
+	}
 #else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
@@ -252,10 +257,15 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		}
 		va_held = true;
 	}
-	ret = p481_bolero_access_check(priv, macro_id, reg, "write", &held,
-				       (void *)_RET_IP_);
-	if (ret)
+	if (p481_card_armed()) {
+		ret = p481_bolero_access_check(priv, macro_id, reg, "write", &held,
+					       (void *)_RET_IP_);
+		if (ret)
+			goto err;
+	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
+		ret = -EHOSTDOWN;
 		goto err;
+	}
 #else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
