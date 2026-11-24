@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/p481_audio_diag.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
@@ -2160,11 +2161,13 @@ static int wcd938x_event_notify(struct notifier_block *block,
 			blocking_notifier_call_chain(&wcd938x->notifier,
 						     WCD938X_EVT_SSR_DOWN,
 						     NULL);
+		if (!p481_mbhc_disabled()) {
 		wcd938x->mbhc->wcd_mbhc.deinit_in_progress = true;
 		mbhc = &wcd938x->mbhc->wcd_mbhc;
 		wcd938x->usbc_hs_status = get_usbc_hs_status(component,
 						mbhc->mbhc_cfg);
 		wcd938x_mbhc_ssr_down(wcd938x->mbhc, component);
+		}
 		wcd938x_reset_low(wcd938x->dev);
 		break;
 	case BOLERO_SLV_EVT_SSR_UP:
@@ -2178,7 +2181,8 @@ static int wcd938x_event_notify(struct notifier_block *block,
 		wcd938x_init_reg(component);
 		regcache_mark_dirty(wcd938x->regmap);
 		regcache_sync(wcd938x->regmap);
-		/* Initialize MBHC module */
+		/* Initialize MBHC module only if the diagnostic detector is enabled. */
+		if (!p481_mbhc_disabled()) {
 		mbhc = &wcd938x->mbhc->wcd_mbhc;
 		ret = wcd938x_mbhc_post_ssr_init(wcd938x->mbhc, component);
 		if (ret) {
@@ -2188,6 +2192,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 			wcd938x_mbhc_hs_detect(component, mbhc->mbhc_cfg);
 		}
 		wcd938x->mbhc->wcd_mbhc.deinit_in_progress = false;
+		}
 		wcd938x->dev_up = true;
 		if(wcd938x->notify_swr_dmic)
 			blocking_notifier_call_chain(&wcd938x->notifier,
