@@ -22,7 +22,8 @@
 #include <linux/pm_runtime.h>
 #include <linux/clk-provider.h>
 #include <linux/p481_audio_diag.h>
-#include <dsp/audio_notifier.h>
+/* P482: select the native TG APR notifier, not A3b's legacy stub. */
+#include "../../include/dsp/audio_notifier.h"
 
 #include "core.h"
 #include "pinctrl-utils.h"
@@ -164,7 +165,7 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 	struct lpi_gpio_state *state = dev_get_drvdata(lpi_dev);
 	static DEFINE_RATELIMIT_STATE(rtl, 1 * HZ, 1);
 
-	if (!lpi_dev_up) {
+	if (!READ_ONCE(lpi_dev_up)) {
 		if (__ratelimit(&rtl))
 			pr_err("%s: ADSP is down due to SSR, return\n",
 				   __func__);
@@ -174,12 +175,16 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 	if (ret < 0)
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
+	if (!READ_ONCE(lpi_dev_up)) {
+		ret = -EHOSTDOWN;
+		goto err;
+	}
 #ifdef CONFIG_P480_A3C
-	if (p481_card_armed() && (!state->core_hw_vote_status ||
+	if (!state->core_hw_vote_status ||
 	    (state->lpass_core_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
+	     !digital_cdc_rsc_mgr_hw_vote_held(state->lpass_core_hw_vote)) ||
 	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_audio_hw_vote)))) {
+	     !digital_cdc_rsc_mgr_hw_vote_held(state->lpass_audio_hw_vote))) {
 		p481_lpi_fault(addr, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
@@ -211,19 +216,23 @@ static int lpi_gpio_write(struct lpi_gpio_pad *pad, unsigned int addr,
 	int ret = 0;
 	static DEFINE_RATELIMIT_STATE(rtl, 1 * HZ, 1);
 
-	if (!lpi_dev_up) {
+	if (!READ_ONCE(lpi_dev_up)) {
 		return -EHOSTDOWN;
 	}
 	ret = pm_runtime_resume_and_get(lpi_dev);
 	if (ret < 0)
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
+	if (!READ_ONCE(lpi_dev_up)) {
+		ret = -EHOSTDOWN;
+		goto err;
+	}
 #ifdef CONFIG_P480_A3C
-	if (p481_card_armed() && (!state->core_hw_vote_status ||
+	if (!state->core_hw_vote_status ||
 	    (state->lpass_core_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
+	     !digital_cdc_rsc_mgr_hw_vote_held(state->lpass_core_hw_vote)) ||
 	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_audio_hw_vote)))) {
+	     !digital_cdc_rsc_mgr_hw_vote_held(state->lpass_audio_hw_vote))) {
 		p481_lpi_fault(addr, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
@@ -531,40 +540,53 @@ static int lpi_notifier_service_cb(struct notifier_block *this,
 {
 	static bool initial_boot = true;
 	struct lpi_gpio_state *state = dev_get_drvdata(lpi_dev);
-	int rc;
+	struct audio_notifier_cb_data *event = ptr;
+	int rc = 0;
 
 	pr_debug("%s: Service opcode 0x%lx\n", __func__, opcode);
 
 	switch (opcode) {
 	case AUDIO_NOTIFIER_SERVICE_DOWN:
-		if (initial_boot) {
+		/* PDR may report its initial state on registration; a real SSR
+		 * BEFORE_SHUTDOWN is never an initial-state notification. */
+		if (initial_boot && event &&
+		    event->service == AUDIO_NOTIFIER_PDR_SERVICE) {
 			initial_boot = false;
 			break;
 		}
+		initial_boot = false;
+		mutex_lock(&state->core_hw_vote_lock);
+		WRITE_ONCE(lpi_dev_up, false);
+		mutex_unlock(&state->core_hw_vote_lock);
 		snd_event_notify(lpi_dev, SND_EVENT_DOWN);
-		lpi_dev_up = false;
+		dev_info(lpi_dev, "P482 LPI_SSR state=down\n");
 		break;
 	case AUDIO_NOTIFIER_SERVICE_UP:
 		if (initial_boot)
 			initial_boot = false;
 
 		/* Reset HW votes after SSR */
-		if (!lpi_dev_up) {
-			/* Add 100ms sleep to ensure AVS is up after SSR */
+		if (!READ_ONCE(lpi_dev_up)) {
+			/* Add 100ms sleep to ensure AVS is up after SSR. */
 			msleep(100);
-			if (state->lpass_core_hw_vote) {
+			mutex_lock(&state->core_hw_vote_lock);
+			if (state->lpass_core_hw_vote)
 				rc = digital_cdc_rsc_mgr_hw_vote_reset(state->lpass_core_hw_vote);
-				if (rc)
-					return NOTIFY_BAD;
-			}
-			if (state->lpass_audio_hw_vote) {
+			if (!rc && state->lpass_audio_hw_vote &&
+			    (!state->lpass_core_hw_vote ||
+			     !clk_is_match(state->lpass_core_hw_vote,
+					   state->lpass_audio_hw_vote)))
 				rc = digital_cdc_rsc_mgr_hw_vote_reset(state->lpass_audio_hw_vote);
-				if (rc)
-					return NOTIFY_BAD;
+			if (!rc)
+				WRITE_ONCE(lpi_dev_up, true);
+			mutex_unlock(&state->core_hw_vote_lock);
+			if (rc) {
+				dev_err(lpi_dev, "P482 LPI_SSR state=restore_failed rc=%d\n", rc);
+				/* Remain down; do not stop other audio SSR clients. */
+				return NOTIFY_OK;
 			}
 		}
-
-		lpi_dev_up = true;
+		dev_info(lpi_dev, "P482 LPI_SSR state=up rc=0\n");
 		snd_event_notify(lpi_dev, SND_EVENT_UP);
 		break;
 	default:
@@ -810,23 +832,7 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 	}
 
 	lpi_dev = &pdev->dev;
-	lpi_dev_up = true;
-	ret = audio_notifier_register("lpi_tlmm", AUDIO_NOTIFIER_ADSP_DOMAIN,
-				      &service_nb);
-	if (ret < 0) {
-		pr_err("%s: Audio notifier register failed ret = %d\n",
-			__func__, ret);
-		goto err_range;
-	}
-
-	ret = snd_event_client_register(dev, &lpi_pinctrl_ssr_ops, NULL);
-	if (!ret) {
-		snd_event_notify(dev, SND_EVENT_UP);
-	} else {
-		dev_err(dev, "%s: snd_event registration failed, ret [%d]\n",
-			__func__, ret);
-		goto err_snd_evt;
-	}
+	WRITE_ONCE(lpi_dev_up, false);
 
 	/* Register LPASS core hw vote */
 	lpass_core_hw_vote = devm_clk_get(&pdev->dev, "lpass_core_hw_vote");
@@ -855,12 +861,29 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
+
+	/* A live callback may run as soon as registered. All clocks, locks
+	 * and runtime PM must already be initialized. */
+	ret = snd_event_client_register(dev, &lpi_pinctrl_ssr_ops, NULL);
+	if (ret)
+		goto err_pm;
+	WRITE_ONCE(lpi_dev_up, true);
+	ret = audio_notifier_register("lpi_tlmm", AUDIO_NOTIFIER_ADSP_DOMAIN,
+				      &service_nb);
+	dev_info(dev, "P482 LPI_NOTIFIER_REGISTER rc=%d\n", ret);
+	if (ret < 0)
+		goto err_snd_evt;
+	snd_event_notify(dev, READ_ONCE(lpi_dev_up) ? SND_EVENT_UP : SND_EVENT_DOWN);
 	p481_rpm_forbid_device(&pdev->dev);
 
 	return 0;
 
 err_snd_evt:
-	audio_notifier_deregister("lpi_tlmm");
+	snd_event_client_deregister(dev);
+err_pm:
+	WRITE_ONCE(lpi_dev_up, false);
+	pm_runtime_disable(&pdev->dev);
+	lpi_dev = NULL;
 err_range:
 	gpiochip_remove(&state->chip);
 err_chip:
@@ -874,11 +897,12 @@ static int lpi_pinctrl_remove(struct platform_device *pdev)
 {
 	struct lpi_gpio_state *state = platform_get_drvdata(pdev);
 
+	audio_notifier_deregister("lpi_tlmm");
+	WRITE_ONCE(lpi_dev_up, false);
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 
 	snd_event_client_deregister(&pdev->dev);
-	audio_notifier_deregister("lpi_tlmm");
 	gpiochip_remove(&state->chip);
 	mutex_destroy(&state->core_hw_vote_lock);
 	mutex_destroy(&state->slew_access_lock);

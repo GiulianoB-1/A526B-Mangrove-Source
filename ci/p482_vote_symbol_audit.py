@@ -29,6 +29,13 @@ for source in sorted(root.rglob("*.c")):
         assert re.search(r"\bU\s+" + name + r"$", syms, re.M), (str(obj), name)
         evidence.append(f"{obj}: U {name}")
 assert required <= seen, required - seen
+# A real SSR reset call must be reachable through the real notifier, not
+# a donor header which returns inline success and drops the callback.
+lpi = out / root / "a3b/soc/pinctrl-lpi.o"
+for name in ("audio_notifier_register", "audio_notifier_deregister"):
+    assert re.search(r"\bU\s+" + name + r"$", symbols(lpi), re.M), (str(lpi), name)
+    assert re.search(r"\bT\s+" + name + r"$", symbols(out / "vmlinux"), re.M), name
+    evidence.append(f"{lpi}: U {name}; vmlinux: T {name}")
 backend = out / root / "dsp/digital-cdc-rsc-mgr.o"
 for obj in (backend, out / "vmlinux"):
     syms = symbols(obj)
