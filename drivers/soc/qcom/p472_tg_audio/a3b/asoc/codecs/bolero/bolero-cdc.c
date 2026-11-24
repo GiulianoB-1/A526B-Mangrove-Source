@@ -1705,6 +1705,8 @@ MODULE_DEVICE_TABLE(of, bolero_dt_match);
 static int p472_a3b_logged_probe(struct platform_device *pdev)
 {
 	int rc=bolero_probe(pdev);
+	if (!rc)
+		p481_rpm_forbid_device(&pdev->dev);
 	dev_info(&pdev->dev,"P472 A3b PART BOLERO probe rc=%d\n",rc);
 	return rc;
 }
