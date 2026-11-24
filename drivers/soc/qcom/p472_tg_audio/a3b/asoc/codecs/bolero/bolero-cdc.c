@@ -91,10 +91,50 @@ static void bolero_ahb_read_device(char __iomem *io_base,
 	*value = (u8)temp;
 }
 
+#ifdef CONFIG_P480_A3C
+/* Do not resume a second macro to conceal a bad access. Hold an existing
+ * active target PM reference until the bus operation completes.
+ * The VA vote reference is acquired separately by the caller.
+ */
+static atomic_t p481_bolero_faults = ATOMIC_INIT(0);
+static int p481_bolero_access_check(struct bolero_priv *priv, u16 macro_id,
+				   u16 reg, const char *op,
+				   struct device **held, void *caller)
+{
+	struct device *target = NULL;
+	int rc = -EHOSTDOWN;
+
+	if (macro_id >= MAX_MACRO)
+		goto blocked;
+	target = priv->macro_params[macro_id].dev;
+	if (!target || !priv->macro_params[macro_id].io_base ||
+	    !priv->macro_params[VA_MACRO].dev ||
+	    !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
+		goto blocked;
+	rc = pm_runtime_get_if_active(target, true);
+	if (rc <= 0)
+		goto blocked;
+	*held = target;
+	return 0;
+
+blocked:
+	dev_err_ratelimited(priv->dev,
+		"P481 BOLERO_UNCLOCKED op=%s macro=%u reg=0x%x caller=%pS\n",
+		op, macro_id, reg, caller);
+	if (atomic_inc_return(&p481_bolero_faults) <= 5)
+		dump_stack();
+	return -EHOSTDOWN;
+}
+#endif
+
 static int __bolero_reg_read(struct bolero_priv *priv,
 			     u16 macro_id, u16 reg, u8 *val)
 {
 	int ret = 0;
+#ifdef CONFIG_P480_A3C
+	struct device *held = NULL;
+	bool va_held = false;
+#endif
 
 	mutex_lock(&priv->clk_lock);
 	if (!priv->dev_up) {
@@ -104,11 +144,30 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		goto ssr_err;
 	}
 
+#ifdef CONFIG_P480_A3C
+	if (priv->macro_params[VA_MACRO].dev) {
+		ret = pm_runtime_resume_and_get(priv->macro_params[VA_MACRO].dev);
+		if (ret < 0) {
+			dev_err_ratelimited(priv->dev,
+				"P481 BOLERO_UNCLOCKED op=read macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
+				macro_id, reg, (void *)_RET_IP_, ret);
+			if (atomic_inc_return(&p481_bolero_faults) <= 5)
+				dump_stack();
+			goto ssr_err;
+		}
+		va_held = true;
+	}
+	ret = p481_bolero_access_check(priv, macro_id, reg, "read", &held,
+				       (void *)_RET_IP_);
+	if (ret)
+		goto err;
+#else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
 		if (!bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
 			goto ssr_err;
 	}
+#endif
 
 	if (priv->version < BOLERO_VERSION_2_0) {
 		/* Request Clk before register access */
@@ -134,10 +193,21 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 				false);
 
 err:
+#ifdef CONFIG_P480_A3C
+	if (held) {
+		pm_runtime_mark_last_busy(held);
+		pm_runtime_put_autosuspend(held);
+	}
+	if (va_held) {
+		pm_runtime_mark_last_busy(priv->macro_params[VA_MACRO].dev);
+		pm_runtime_put_autosuspend(priv->macro_params[VA_MACRO].dev);
+	}
+#else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_mark_last_busy(priv->macro_params[VA_MACRO].dev);
 		pm_runtime_put_autosuspend(priv->macro_params[VA_MACRO].dev);
 	}
+#endif
 ssr_err:
 	mutex_unlock(&priv->clk_lock);
 	return ret;
@@ -147,6 +217,10 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 			      u16 macro_id, u16 reg, u8 val)
 {
 	int ret = 0;
+#ifdef CONFIG_P480_A3C
+	struct device *held = NULL;
+	bool va_held = false;
+#endif
 
 	mutex_lock(&priv->clk_lock);
 	if (!priv->dev_up) {
@@ -155,11 +229,30 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		ret = -EINVAL;
 		goto ssr_err;
 	}
+#ifdef CONFIG_P480_A3C
+	if (priv->macro_params[VA_MACRO].dev) {
+		ret = pm_runtime_resume_and_get(priv->macro_params[VA_MACRO].dev);
+		if (ret < 0) {
+			dev_err_ratelimited(priv->dev,
+				"P481 BOLERO_UNCLOCKED op=write macro=%u reg=0x%x caller=%pS pm_rc=%d\n",
+				macro_id, reg, (void *)_RET_IP_, ret);
+			if (atomic_inc_return(&p481_bolero_faults) <= 5)
+				dump_stack();
+			goto ssr_err;
+		}
+		va_held = true;
+	}
+	ret = p481_bolero_access_check(priv, macro_id, reg, "write", &held,
+				       (void *)_RET_IP_);
+	if (ret)
+		goto err;
+#else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_get_sync(priv->macro_params[VA_MACRO].dev);
 		if (!bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
 			goto ssr_err;
 	}
+#endif
 
 	if (priv->version < BOLERO_VERSION_2_0) {
 		/* Request Clk before register access */
@@ -185,10 +278,21 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 				false);
 
 err:
+#ifdef CONFIG_P480_A3C
+	if (held) {
+		pm_runtime_mark_last_busy(held);
+		pm_runtime_put_autosuspend(held);
+	}
+	if (va_held) {
+		pm_runtime_mark_last_busy(priv->macro_params[VA_MACRO].dev);
+		pm_runtime_put_autosuspend(priv->macro_params[VA_MACRO].dev);
+	}
+#else
 	if (priv->macro_params[VA_MACRO].dev) {
 		pm_runtime_mark_last_busy(priv->macro_params[VA_MACRO].dev);
 		pm_runtime_put_autosuspend(priv->macro_params[VA_MACRO].dev);
 	}
+#endif
 ssr_err:
 	mutex_unlock(&priv->clk_lock);
 	return ret;
