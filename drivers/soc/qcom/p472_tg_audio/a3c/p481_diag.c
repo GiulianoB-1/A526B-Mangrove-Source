@@ -21,6 +21,11 @@ static bool dapm_idle_off;
 static struct kobject *audio_kobj;
 static int alive_t;
 
+bool p481_card_armed(void)
+{
+	return READ_ONCE(card_attempted);
+}
+
 bool p481_mbhc_disabled(void)
 {
 	return !READ_ONCE(mbhc_enable);
@@ -146,7 +151,9 @@ static ssize_t card_enable_store(struct kobject *kobj,
 	pr_info("P481 CARD_ENABLE rc=%d\n", rc);
 	if (rc)
 		pr_err("P480 A3c INIT_FAIL stage=machine rc=%d; A3a preserved\n", rc);
-	return rc ? rc : count;
+	if (rc)
+		return rc;
+	return count;
 }
 static struct kobj_attribute card_enable_attr = __ATTR(card_enable, 0200, NULL, card_enable_store);
 
