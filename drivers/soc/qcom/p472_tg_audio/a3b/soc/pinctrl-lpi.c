@@ -175,11 +175,11 @@ static int lpi_gpio_read(struct lpi_gpio_pad *pad, unsigned int addr)
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
 #ifdef CONFIG_P480_A3C
-	if (!state->core_hw_vote_status ||
+	if (p481_card_armed() && (!state->core_hw_vote_status ||
 	    (state->lpass_core_hw_vote &&
 	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
 	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_audio_hw_vote))) {
+	     !__clk_get_enable_count(state->lpass_audio_hw_vote)))) {
 		p481_lpi_fault(addr, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
@@ -219,11 +219,11 @@ static int lpi_gpio_write(struct lpi_gpio_pad *pad, unsigned int addr,
 		return ret;
 	mutex_lock(&state->core_hw_vote_lock);
 #ifdef CONFIG_P480_A3C
-	if (!state->core_hw_vote_status ||
+	if (p481_card_armed() && (!state->core_hw_vote_status ||
 	    (state->lpass_core_hw_vote &&
 	     !__clk_get_enable_count(state->lpass_core_hw_vote)) ||
 	    (!state->lpass_core_hw_vote && state->lpass_audio_hw_vote &&
-	     !__clk_get_enable_count(state->lpass_audio_hw_vote))) {
+	     !__clk_get_enable_count(state->lpass_audio_hw_vote)))) {
 		p481_lpi_fault(addr, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
@@ -850,6 +850,7 @@ static int lpi_pinctrl_probe(struct platform_device *pdev)
 	pm_runtime_use_autosuspend(&pdev->dev);
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
+	p481_rpm_forbid_device(&pdev->dev);
 
 	return 0;
 
