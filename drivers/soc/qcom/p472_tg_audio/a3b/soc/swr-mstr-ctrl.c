@@ -3351,7 +3351,11 @@ static int swrm_runtime_resume(struct device *dev)
 		swrm->state = SWR_MSTR_UP;
 	}
 exit:
+#ifdef CONFIG_P480_A3C
+	if ((swrm->is_always_on || (p481_card_armed() && ret < 0)) && !aud_core_err)
+#else
 	if (swrm->is_always_on && !aud_core_err)
+#endif
 		swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, false);
 
 	if (!hw_core_err)
