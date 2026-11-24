@@ -1,0 +1,23 @@
+{
+  "schema": "P481-A3C-DIAGNOSTIC-v1",
+  "base": "a85866eb110fc54e0652c9974674ed40df326839",
+  "default_card_enabled": false,
+  "card_enable_one_shot": true,
+  "knobs": {
+    "mbhc_enable": 1,
+    "rpm_forbid": 0,
+    "dapm_idle_off": 0
+  },
+  "clock_backend": "existing disabled-config no-op; trace CCF software count; not hardware proof",
+  "guard_coverage": {
+    "bolero": "error-returning MMIO entry with PM refs",
+    "lpi": "MMIO wrappers under vote lock",
+    "swr": "slave transactions and PM transitions; raw master wrappers incomplete"
+  },
+  "hardware_validated": false,
+  "flash_authorized": false,
+  "variant": "A3C_ONLY",
+  "image": "MANGROVE-P481-A3C-HLT.boot.img",
+  "fallback_artifact_id": 14672521007,
+  "review": "ci/P481-DIAGNOSTIC-REVIEW.md"
+}
