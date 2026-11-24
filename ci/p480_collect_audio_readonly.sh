@@ -83,7 +83,7 @@ fi
 
 # dmesg may require root. Do not automatically request root privileges.
 # Store only filtered audio and boot markers, not the complete system log.
-MATCH='P480|P479 H4|A3c|Kona|kona|WCD938|wcd938|BOLERO|bolero|SWR|soundwire|SoundWire|q6asm|q6adm|q6afe|Q6ASM|Q6AFE|LPASS|ADSP|ASoC|snd_soc|msm-pcm|msm-dai'
+MATCH='P481|P480|P479 H4|A3c|Kona|kona|WCD938|wcd938|BOLERO|bolero|SWR|soundwire|SoundWire|q6asm|q6adm|q6afe|Q6ASM|Q6AFE|LPASS|ADSP|ASoC|snd_soc|msm-pcm|msm-dai'
 if command -v dmesg >/dev/null 2>&1; then
   dmesg 2> "$OUT/dmesg_read_error.txt" |
     grep -Ei "$MATCH" > "$OUT/kernel_audio_messages.txt" || true
@@ -132,6 +132,11 @@ if [ -f "$OUT/kernel_audio_messages.txt" ]; then
     "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_link_attempts.txt" || true
   grep -E 'P480 A3c (ROUTE_KEPT |ROUTE_SKIPPED |ROUTES |INIT_MOVED |PORT_MAP=|AUDRX_INIT |WSA_INIT_SKIPPED |CARD register |SND_CARD_REGISTER |CARD_NUMBER |DEVICES |KCONTROLS )' \
     "$OUT/kernel_audio_messages.txt" > "$OUT/as_built_route_attempts.txt" || true
+fi
+
+# P481 diagnostic records. Do not activate the card or write sysfs.
+if [ -f "$OUT/kernel_audio_messages.txt" ]; then
+  grep -F 'P481 ' "$OUT/kernel_audio_messages.txt" > "$OUT/p481_diagnostic.txt" || true
 fi
 
 # Optional TAR output in the same user directory. Nothing touches partitions.
