@@ -9,6 +9,7 @@
 #include <linux/workqueue.h>
 #include <linux/jiffies.h>
 #include <linux/kobject.h>
+#include <linux/p481_audio_diag.h>
 #include <dsp/q6core.h>
 
 extern int rtac_init(void);
@@ -26,8 +27,6 @@ extern void q6lsm_exit(void);
 extern bool p472_a2a_ready(void);
 extern bool audio_cal_is_initialized(void);
 extern int __init p480_audio_platform_init(void);
-extern void __init p480_audio_platform_exit(void);
-extern int __init p480_kona_machine_init(void);
 #endif
 
 static unsigned int p472_a3a_checks;
@@ -100,14 +99,13 @@ static int __init p472_a3a_start(void)
 		pr_err("P480 A3c PLATFORM_SKIPPED reason=platform_register_failed rc=%d; A3a preserved\n", rc);
 		goto a3c_nonfatal;
 	}
-	rc = p480_kona_machine_init();
+	/* P481: keep the providers, but never bind the card at boot. */
+	rc = p481_diag_register();
 	if (rc) {
-		pr_err("P480 A3c INIT_FAIL stage=machine rc=%d; A3a preserved\n", rc);
-		pr_err("P480 A3c MACHINE_SKIPPED reason=machine_register_failed rc=%d; A3a preserved\n", rc);
-		p480_audio_platform_exit();
+		pr_err("P480 A3c INIT_FAIL stage=diag_sysfs rc=%d; A3a preserved\n", rc);
 		goto a3c_nonfatal;
 	}
-	pr_info("P480 A3c INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=1\n");
+	pr_info("P481 INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=0\n");
 a3c_nonfatal:
 #endif
 
