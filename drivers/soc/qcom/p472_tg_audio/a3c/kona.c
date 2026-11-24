@@ -13,6 +13,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/p481_audio_diag.h>
 #include <linux/input.h>
 #include <linux/of_device.h>
 #include <linux/soc/qcom/fsa4480-i2c.h>
@@ -7471,6 +7472,10 @@ static int msm_aux_codec_init(struct snd_soc_component *component)
 	}
 
 mbhc_cfg_cal:
+	if (p481_mbhc_disabled()) {
+		dev_info(component->dev, "P481 MBHC_SKIPPED\n");
+		return 0;
+	}
 	mbhc_calibration = def_wcd_mbhc_cal();
 	if (!mbhc_calibration)
 		return -ENOMEM;
@@ -8278,6 +8283,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 			 card->snd_card->number, card->snd_card->id,
 			 card->snd_card->shortname, card->snd_card->driver);
 		p480_log_real_device_counts(card);
+		p481_alive_start();
 	}
 	if (ret == -EPROBE_DEFER) {
 		p480_log_deferred_components(card);
@@ -8451,7 +8457,7 @@ static struct platform_driver kona_asoc_machine_driver = {
 /* Defer machine binding until calibration, Q6 and A3c platforms are ready.
  * module_platform_driver() would execute at the earlier device_initcall level.
  */
-int __init p480_kona_machine_init(void)
+int p480_kona_machine_init(void)
 {
 	return platform_driver_register(&kona_asoc_machine_driver);
 }
