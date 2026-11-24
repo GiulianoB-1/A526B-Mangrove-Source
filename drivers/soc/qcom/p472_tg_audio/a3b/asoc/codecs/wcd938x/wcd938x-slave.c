@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/p481_audio_diag.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
@@ -401,6 +402,8 @@ static int wcd938x_swr_remove(struct swr_device *pdev)
 static int p472_a3b_logged_probe(struct swr_device *pdev)
 {
 	int rc=wcd938x_swr_probe(pdev);
+	if (!rc)
+		p481_rpm_forbid_device(&pdev->dev);
 	dev_info(&pdev->dev,"P472 A3b PART WCD938X_SWR_SLAVE probe rc=%d\n",rc);
 	return rc;
 }
