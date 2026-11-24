@@ -16,6 +16,7 @@ void digital_cdc_rsc_mgr_hw_vote_reset(struct clk* vote_handle);
 
 #ifdef CONFIG_P480_A3C
 #include <linux/clk-provider.h>
+#include <linux/err.h>
 #include <linux/kernel.h>
 /* Trace the pre-existing disabled-config backend without pretending its
  * local counters are real hardware votes. CCF count is software evidence.
