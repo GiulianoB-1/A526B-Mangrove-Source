@@ -2,6 +2,7 @@
 /* Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/p481_audio_diag.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/clk.h>
@@ -3211,6 +3212,7 @@ static int va_macro_probe(struct platform_device *pdev)
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_suspend_ignore_children(&pdev->dev, true);
 	pm_runtime_enable(&pdev->dev);
+	p481_rpm_forbid_device(&pdev->dev);
 	if (is_used_va_swr_gpio)
 		schedule_work(&va_priv->va_macro_add_child_devices_work);
 	return ret;
