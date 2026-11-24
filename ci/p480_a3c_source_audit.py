@@ -159,12 +159,18 @@ def main() -> None:
     check("module_init(p480_audio_platform_init)" not in platform_init and
           "module_platform_driver(kona_asoc_machine_driver)" not in kona_source,
           "A3c platform and Kona machine have no premature device initcall")
+    diag = read("drivers/soc/qcom/p472_tg_audio/a3c/p481_diag.c")
     check("rc = p480_audio_platform_init();" in a3a_init and
-          "rc = p480_kona_machine_init();" in a3a_init and
+          "rc = p481_diag_register();" in a3a_init and
+          "p480_kona_machine_init(" not in a3a_init and
+          "rc = p480_kona_machine_init();" in diag and
+          "int p480_kona_machine_init(void)" in kona_source and
+          "__ATTR(card_enable, 0200, NULL, card_enable_store)" in diag and
+          "WRITE_ONCE(card_attempted, true);" in diag and
           a3a_init.index("rc = q6lsm_init();") <
           a3a_init.index("rc = p480_audio_platform_init();") <
-          a3a_init.index("rc = p480_kona_machine_init();"),
-          "A2a then A3a Q6 then A3c platform then machine")
+          a3a_init.index("rc = p481_diag_register();"),
+          "A2a then A3a Q6 then A3c platform; machine gated by root sysfs")
     check("CAL_REGISTER_SKIPPED reason=not_initialized" in cal_source and
           "if (!audio_cal_is_initialized())" in cal_source and
           "P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready" in a3a_init and
@@ -277,9 +283,10 @@ def main() -> None:
           "P480 A3c DEVICES pcm=%d compress=%d" in kona_source,
           "route checking kept enabled, card number and real PCM/compress counts logged")
     check("P480 A3c INIT_FAIL stage=platform rc=%d" in a3a_init and
-          "P480 A3c INIT_FAIL stage=machine rc=%d" in a3a_init and
+          "P480 A3c INIT_FAIL stage=machine rc=%d" in diag and
           a3a_init.count("goto a3c_nonfatal;") == 2 and
-          "p480_audio_platform_exit();" in a3a_init,
+          "p480_audio_platform_exit();" not in a3a_init and
+          "p480_audio_platform_exit();" not in diag,
           "A3c registration failures log stage and retain the A3a Q6 stack")
 
     # Fix 3: the skipped WSA link used to own all of TG's bolero RX init.
@@ -354,6 +361,33 @@ def main() -> None:
           "card->snd_card->id" in kona_source and
           "card->snd_card->driver" in kona_source,
           "A3C-only actual ALSA registration rc and proc card identity")
+
+    bolero = read("drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/bolero/bolero-cdc.c")
+    lpi = read("drivers/soc/qcom/p472_tg_audio/a3b/soc/pinctrl-lpi.c")
+    swr = read("drivers/soc/qcom/p472_tg_audio/a3b/soc/swr-mstr-ctrl.c")
+    mbhc = read("drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/wcd-mbhc-v2.c")
+    dapm = read("sound/soc/soc-dapm.c")
+    check("static bool mbhc_enable = true;" in diag and
+          "static bool rpm_forbid;" in diag and
+          "static bool dapm_idle_off;" in diag and
+          "if (card_attempted)" in diag and
+          "return -EBUSY;" in diag and
+          "P481 ALIVE t=%d" in diag and
+          "p481_alive_start();" in kona_source,
+          "P481 frozen one-shot bisect controls and post-registration heartbeat")
+    check("P481 BOLERO_UNCLOCKED" in bolero and
+          "pm_runtime_resume_and_get" in bolero and
+          "pm_runtime_get_if_active(target, true)" in bolero and
+          "pm_runtime_put_autosuspend(held)" in bolero and
+          "P481 LPI_UNCLOCKED" in lpi and
+          "P481 SWR_UNCLOCKED" in swr and
+          "p481_swr_transaction_check" in swr,
+          "P481 error-returning bolero/LPI and SWR transaction guards")
+    check("P481 MBHC_SKIPPED phase=init_before_irq" in mbhc and
+          "p481_mbhc_disabled()" in kona_source and
+          "P481 DAPM_BIAS_HOLD" in dapm and
+          "dapm->idle_bias_off = false;" in dapm,
+          "P481 jack-only MBHC bisect and effective DAPM policy")
 
     # P480 reviewer boots are packaged only by the native build workflow.
     read("ci/p480_boot_repack.py")
