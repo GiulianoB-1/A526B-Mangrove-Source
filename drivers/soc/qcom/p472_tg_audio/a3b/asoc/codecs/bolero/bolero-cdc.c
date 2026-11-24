@@ -11,6 +11,8 @@
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
+#include <linux/p481_audio_diag.h>
 #include <soc/snd_event.h>
 #include <linux/pm_runtime.h>
 #include <soc/swr-common.h>
@@ -110,6 +112,14 @@ static int p481_bolero_access_check(struct bolero_priv *priv, u16 macro_id,
 	if (!target || !priv->macro_params[macro_id].io_base ||
 	    !priv->macro_params[VA_MACRO].dev ||
 	    !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
+		goto blocked;
+	/* The disabled-config resource-manager backend does not vote.
+	 * A positive CCF reference is necessary, but not proof of hardware.
+	 */
+	if ((priv->lpass_core_hw_vote &&
+	     !__clk_get_enable_count(priv->lpass_core_hw_vote)) ||
+	    (priv->lpass_audio_hw_vote &&
+	     !__clk_get_enable_count(priv->lpass_audio_hw_vote)))
 		goto blocked;
 	rc = pm_runtime_get_if_active(target, true);
 	if (rc <= 0)
@@ -1566,6 +1576,9 @@ int bolero_runtime_resume(struct device *dev)
 	int ret = 0;
 	static DEFINE_RATELIMIT_STATE(rtl, 1 * HZ, 1);
 
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=entry rc=0\n", dev_name(dev));
+#endif
 	mutex_lock(&priv->vote_lock);
 	if (priv->lpass_core_hw_vote == NULL) {
 		dev_dbg(dev, "%s: Invalid lpass core hw node\n", __func__);
@@ -1606,6 +1619,10 @@ audio_vote:
 done:
 	mutex_unlock(&priv->vote_lock);
 	pm_runtime_set_autosuspend_delay(priv->dev, BOLERO_AUTO_SUSPEND_DELAY);
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=0 core=%d audio=%d vote_rc=%d\n",
+		 dev_name(dev), priv->core_hw_vote_count, priv->core_audio_vote_count, ret);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(bolero_runtime_resume);
@@ -1614,6 +1631,9 @@ int bolero_runtime_suspend(struct device *dev)
 {
 	struct bolero_priv *priv = dev_get_drvdata(dev->parent);
 
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=entry rc=0\n", dev_name(dev));
+#endif
 	mutex_lock(&priv->vote_lock);
 	if (priv->lpass_core_hw_vote != NULL) {
 		if (--priv->core_hw_vote_count == 0)
@@ -1642,6 +1662,10 @@ int bolero_runtime_suspend(struct device *dev)
 		__func__, priv->core_audio_vote_count);
 
 	mutex_unlock(&priv->vote_lock);
+#ifdef CONFIG_P480_A3C
+	dev_info(dev, "P481 RPM dev=%s op=suspend phase=exit rc=0 core=%d audio=%d\n",
+		 dev_name(dev), priv->core_hw_vote_count, priv->core_audio_vote_count);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(bolero_runtime_suspend);
