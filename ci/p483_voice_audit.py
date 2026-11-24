@@ -8,7 +8,8 @@ from pathlib import Path
 out, pkg = map(Path, sys.argv[1:])
 root = Path("drivers/soc/qcom/p472_tg_audio")
 source = (root / "a3c/msm-pcm-voice-v2.c").read_text()
-names = [a or b for a, b in re.findall(r'SOC_[A-Z_]+\("([^"]+)"|\.name\s*=\s*"([^"]+)"', source)]
+control_tables = source[source.index('static struct snd_kcontrol_new msm_voice_controls[]'):source.index('static int msm_pcm_voice_probe(')]
+names = [a or b for a, b in re.findall(r'SOC_[A-Z_]+\("([^"]+)"|\.name\s*=\s*"([^"]+)"', control_tables)]
 expected = ["Voice Rx Device Mute","Voice Tx Device Mute","Voice Tx Mute","Voice Rx Gain","TTY Mode","Slowtalk Enable","Voice ECNS Enable","Voice Topology Disable","HD Voice Enable","CVD Version","Voice Sidetone Enable","Voice Mic Break Enable","Voc Rec Config"]
 assert names == expected, names
 assert "voc_start_voice_call(" not in source
