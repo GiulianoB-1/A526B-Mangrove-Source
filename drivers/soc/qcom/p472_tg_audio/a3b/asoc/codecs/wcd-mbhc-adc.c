@@ -72,6 +72,9 @@ static int wcd_measure_adc_continuous(struct wcd_mbhc *mbhc)
 	int retry = 3;
 	u8 adc_en = 0;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_measure_adc_continuous\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 
 	/* Pre-requisites for ADC continuous measurement */
@@ -135,6 +138,9 @@ static int wcd_measure_adc_once(struct wcd_mbhc *mbhc, int mux_ctl)
 	int output_mv = 0;
 	u8 adc_en = 0;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_measure_adc_once\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ADC_MODE, 0);
@@ -583,6 +589,9 @@ static void wcd_mbhc_adc_update_fsm_source(struct wcd_mbhc *mbhc,
 static void wcd_schedule_hs_detect_plug(struct wcd_mbhc *mbhc,
 					    struct work_struct *work)
 {
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_schedule_hs_detect_plug\n");
+#endif
 	pr_debug("%s: scheduling correct_swch_plug\n", __func__);
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 	mbhc->hs_detect_work_stop = false;
@@ -779,6 +788,9 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 #endif
 	int hs_threshold, micbias_mv;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_correct_swch_plug\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 
 	mbhc = container_of(work, struct wcd_mbhc, correct_plug_swch);
@@ -1143,6 +1155,9 @@ static irqreturn_t wcd_mbhc_adc_hs_rem_irq(int irq, void *data)
 	bool hphpa_on = false;
 	u8  moisture_status = 0;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_adc_hs_rem_irq\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 
@@ -1239,6 +1254,9 @@ static irqreturn_t wcd_mbhc_adc_hs_ins_irq(int irq, void *data)
 	u8 clamp_state = 0;
 	u8 clamp_retry = WCD_MBHC_FAKE_INS_RETRY;
 
+#ifdef CONFIG_P480_A3C
+	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_adc_hs_ins_irq\n");
+#endif
 	pr_debug("%s: enter\n", __func__);
 
 	/*
