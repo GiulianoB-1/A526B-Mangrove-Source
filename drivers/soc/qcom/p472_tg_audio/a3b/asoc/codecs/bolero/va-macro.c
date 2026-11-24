@@ -503,10 +503,12 @@ static int va_macro_swr_pwr_event(struct snd_soc_dapm_widget *w,
 		if (va_priv->lpass_audio_hw_vote) {
 			ret = digital_cdc_rsc_mgr_hw_vote_enable(
 					va_priv->lpass_audio_hw_vote);
-			if (ret)
+			if (ret) {
 				dev_err(va_dev,
 					"%s: lpass audio hw enable failed\n",
 					__func__);
+				return ret;
+			}
 		}
 		if (!ret) {
 			if (bolero_tx_clk_switch(component, VA_CORE_CLK))

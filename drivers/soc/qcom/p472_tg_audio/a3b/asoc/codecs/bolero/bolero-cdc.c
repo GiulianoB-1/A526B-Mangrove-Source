@@ -113,13 +113,11 @@ static int p481_bolero_access_check(struct bolero_priv *priv, u16 macro_id,
 	    !priv->macro_params[VA_MACRO].dev ||
 	    !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev))
 		goto blocked;
-	/* The disabled-config resource-manager backend does not vote.
-	 * A positive CCF reference is necessary, but not proof of hardware.
-	 */
+	/* Check manager-owned CCF references rather than global counts. */
 	if ((priv->lpass_core_hw_vote &&
-	     !__clk_get_enable_count(priv->lpass_core_hw_vote)) ||
+	     !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote)) ||
 	    (priv->lpass_audio_hw_vote &&
-	     !__clk_get_enable_count(priv->lpass_audio_hw_vote)))
+	     !digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote)))
 		goto blocked;
 	rc = pm_runtime_get_if_active(target, true);
 	if (rc <= 0)
@@ -173,6 +171,8 @@ static int __bolero_reg_read(struct bolero_priv *priv,
 		if (ret)
 			goto err;
 	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
+		dev_err_ratelimited(priv->dev, "P481 BOLERO_UNCLOCKED op=early macro=%u reg=0x%x caller=%pS\n",
+				    macro_id, reg, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
 	}
@@ -263,6 +263,8 @@ static int __bolero_reg_write(struct bolero_priv *priv,
 		if (ret)
 			goto err;
 	} else if (va_held && !bolero_check_core_votes(priv->macro_params[VA_MACRO].dev)) {
+		dev_err_ratelimited(priv->dev, "P481 BOLERO_UNCLOCKED op=early macro=%u reg=0x%x caller=%pS\n",
+				    macro_id, reg, (void *)_RET_IP_);
 		ret = -EHOSTDOWN;
 		goto err;
 	}
@@ -1600,7 +1602,7 @@ int bolero_runtime_resume(struct device *dev)
 		if (ret < 0) {
 			dev_err(dev, "%s:lpass core hw enable failed\n",
 				__func__);
-			goto audio_vote;
+			goto done;
 		}
 	}
 	priv->core_hw_vote_count++;
@@ -1619,21 +1621,25 @@ audio_vote:
 			if (__ratelimit(&rtl))
 				dev_err(dev, "%s:lpass audio hw enable failed\n",
 					__func__);
-			goto done;
+			goto undo_core;
 		}
 	}
 	priv->core_audio_vote_count++;
 	trace_printk("%s: audio vote count %d\n",
 		__func__, priv->core_audio_vote_count);
 
+	goto done;
+undo_core:
+	if (priv->lpass_core_hw_vote && --priv->core_hw_vote_count == 0)
+		digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_core_hw_vote);
 done:
 	mutex_unlock(&priv->vote_lock);
 	pm_runtime_set_autosuspend_delay(priv->dev, BOLERO_AUTO_SUSPEND_DELAY);
 #ifdef CONFIG_P480_A3C
-	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=0 core=%d audio=%d vote_rc=%d\n",
-		 dev_name(dev), priv->core_hw_vote_count, priv->core_audio_vote_count, ret);
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=%d core=%d audio=%d vote_rc=%d\n",
+		 dev_name(dev), ret, priv->core_hw_vote_count, priv->core_audio_vote_count, ret);
 #endif
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(bolero_runtime_resume);
 

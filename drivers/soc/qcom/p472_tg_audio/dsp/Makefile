@@ -12,3 +12,6 @@ obj-$(CONFIG_P472_A3A_Q6) += q6voice.o rtac.o msm-audio-event-notify.o avtimer.o
 
 # A2a: link real TG q6core/calibration via existing 5.10 ION
 obj-$(CONFIG_P472_TG_Q6CORE) += adsp_err.o audio_calibration.o audio_cal_utils.o msm_audio_ion.o p472_a2a_core_init.o
+
+# P482: A3b selects the real TG hardware vote backend.
+obj-$(CONFIG_P472_A3B_B1) += digital-cdc-rsc-mgr.o

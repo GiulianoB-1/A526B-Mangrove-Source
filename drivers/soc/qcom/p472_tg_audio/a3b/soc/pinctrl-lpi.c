@@ -531,6 +531,7 @@ static int lpi_notifier_service_cb(struct notifier_block *this,
 {
 	static bool initial_boot = true;
 	struct lpi_gpio_state *state = dev_get_drvdata(lpi_dev);
+	int rc;
 
 	pr_debug("%s: Service opcode 0x%lx\n", __func__, opcode);
 
@@ -551,12 +552,16 @@ static int lpi_notifier_service_cb(struct notifier_block *this,
 		if (!lpi_dev_up) {
 			/* Add 100ms sleep to ensure AVS is up after SSR */
 			msleep(100);
-			if (state->lpass_core_hw_vote)
-				digital_cdc_rsc_mgr_hw_vote_reset(
-					state->lpass_core_hw_vote);
-			if (state->lpass_audio_hw_vote)
-				digital_cdc_rsc_mgr_hw_vote_reset(
-					state->lpass_audio_hw_vote);
+			if (state->lpass_core_hw_vote) {
+				rc = digital_cdc_rsc_mgr_hw_vote_reset(state->lpass_core_hw_vote);
+				if (rc)
+					return NOTIFY_BAD;
+			}
+			if (state->lpass_audio_hw_vote) {
+				rc = digital_cdc_rsc_mgr_hw_vote_reset(state->lpass_audio_hw_vote);
+				if (rc)
+					return NOTIFY_BAD;
+			}
 		}
 
 		lpi_dev_up = true;
@@ -928,9 +933,9 @@ exit:
 	mutex_unlock(&state->core_hw_vote_lock);
 	trace_printk("%s: exit\n", __func__);
 	#ifdef CONFIG_P480_A3C
-	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=0 vote_rc=%d\n", dev_name(dev), ret);
+	dev_info(dev, "P481 RPM dev=%s op=resume phase=exit rc=%d vote_rc=%d\n", dev_name(dev), ret, ret);
 	#endif
-	return 0;
+	return ret;
 }
 
 int lpi_pinctrl_runtime_suspend(struct device *dev)

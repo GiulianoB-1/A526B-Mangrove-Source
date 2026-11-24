@@ -333,6 +333,7 @@ static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST - SLIMBUS_0_RX];
 static unsigned long afe_configured_cmd;
 
 static struct afe_ctl this_afe;
+static bool p482_afe_initialized;
 
 #define TIMEOUT_MS 1000
 #define Q6AFE_MAX_VOLUME 0x3FFF
@@ -11974,12 +11975,14 @@ int __init afe_init(void)
 
 	this_afe.event_notifier.notifier_call  = afe_aud_event_notify;
 	msm_aud_evt_blocking_register_client(&this_afe.event_notifier);
+	smp_store_release(&p482_afe_initialized, true);
 
 	return 0;
 }
 
 void afe_exit(void)
 {
+	smp_store_release(&p482_afe_initialized, false);
 	if (this_afe.apr) {
 		apr_reset(this_afe.apr);
 		atomic_set(&this_afe.state, 0);
@@ -12047,21 +12050,23 @@ int afe_vote_lpass_core_hw(uint32_t hw_block_id, char *client_name,
 						&hw_vote_cfg;
 	int ret = 0;
 
-	if (!client_handle) {
-		pr_err("%s: Invalid client_handle\n", __func__);
-		return -EINVAL;
-	}
-
-	if (!client_name) {
-		pr_err("%s: Invalid client_name\n", __func__);
+	if (client_handle)
 		*client_handle = 0;
-		return -EINVAL;
+	if (!client_handle || !client_name ||
+	    hw_block_id >= ARRAY_SIZE(this_afe.lpass_hw_core_client_hdl)) {
+		ret = -EINVAL;
+		goto vote_trace;
+	}
+	/* A3b probes before AFE mutexes and wait queues exist. */
+	if (!smp_load_acquire(&p482_afe_initialized)) {
+		ret = -EAGAIN;
+		goto vote_trace;
 	}
 
 	ret = afe_q6_interface_prepare();
 	if(ret) {
 		pr_err("%s: Q6 interface prepare failed %d\n", __func__, ret);
-		return ret;
+		goto vote_trace;
 	}
 
 	mutex_lock(&this_afe.afe_clk_lock);
@@ -12094,7 +12099,13 @@ int afe_vote_lpass_core_hw(uint32_t hw_block_id, char *client_name,
 		pr_debug("%s: lpass_hw_core_client_hdl %d\n", __func__,
 			this_afe.lpass_hw_core_client_hdl[hw_block_id]);
 	}
+	if (!ret && !*client_handle)
+		ret = -EIO;
 	mutex_unlock(&this_afe.afe_clk_lock);
+vote_trace:
+	pr_info("P482 AFE_HW_VOTE block=%u client=%s handle=%u rc=%d\n",
+		hw_block_id, client_name ?: "invalid",
+		client_handle ? *client_handle : 0, ret);
 	return ret;
 }
 EXPORT_SYMBOL(afe_vote_lpass_core_hw);
@@ -12114,10 +12125,18 @@ int afe_unvote_lpass_core_hw(uint32_t hw_block_id, uint32_t client_handle)
 						&hw_vote_cfg;
 	int ret = 0;
 
+	if (hw_block_id >= ARRAY_SIZE(this_afe.lpass_hw_core_client_hdl)) {
+		ret = -EINVAL;
+		goto unvote_trace;
+	}
+	if (!smp_load_acquire(&p482_afe_initialized)) {
+		ret = -EAGAIN;
+		goto unvote_trace;
+	}
 	ret = afe_q6_interface_prepare();
 	if(ret) {
 		pr_err("%s: Q6 interface prepare failed %d\n", __func__, ret);
-		return ret;
+		goto unvote_trace;
 	}
 
 	mutex_lock(&this_afe.afe_clk_lock);
@@ -12157,6 +12176,9 @@ int afe_unvote_lpass_core_hw(uint32_t hw_block_id, uint32_t client_handle)
 				&this_afe.lpass_core_hw_wait);
 done:
 	mutex_unlock(&this_afe.afe_clk_lock);
+unvote_trace:
+	pr_info("P482 AFE_HW_UNVOTE block=%u handle=%u rc=%d\n",
+		hw_block_id, client_handle, ret);
 	return ret;
 }
 EXPORT_SYMBOL(afe_unvote_lpass_core_hw);

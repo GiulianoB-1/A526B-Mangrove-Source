@@ -2,6 +2,7 @@
 /* Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
 #define DEBUG
+#include <linux/p481_audio_diag.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -1157,6 +1158,10 @@ static irqreturn_t wcd_mbhc_adc_hs_rem_irq(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_adc_hs_rem_irq\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1256,6 +1261,10 @@ static irqreturn_t wcd_mbhc_adc_hs_ins_irq(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_adc_hs_ins_irq\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: enter\n", __func__);
 

@@ -1146,6 +1146,10 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_mech_plug_detect_irq\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: enter\n", __func__);
 	if (mbhc == NULL) {
@@ -1258,6 +1262,10 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_btn_press_handler\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: enter\n", __func__);
 	complete(&mbhc->btn_press_compl);
@@ -1312,6 +1320,10 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_release_handler\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1380,6 +1392,10 @@ static irqreturn_t wcd_mbhc_hphl_ocp_irq(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphl_ocp_irq\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: received HPHL OCP irq\n", __func__);
 	if (mbhc) {
@@ -1423,6 +1439,10 @@ static irqreturn_t wcd_mbhc_hphr_ocp_irq(int irq, void *data)
 
 #ifdef CONFIG_P480_A3C
 	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphr_ocp_irq\n");
+	if (p481_mbhc_disabled()) {
+		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
+		return IRQ_HANDLED;
+	}
 #endif
 	pr_debug("%s: received HPHR OCP irq\n", __func__);
 
