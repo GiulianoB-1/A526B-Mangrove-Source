@@ -1,0 +1,315 @@
+name: P488-CMDLINE Review 6 package (NO FLASH)
+on:
+  push:
+    branches: ['review/p488-cmdline-r6']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: review6-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  review6:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LOCALVERSION: ''
+    steps:
+      - name: Checkout exact P480 A3c init-order fix
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail-closed A3c-only source, initcall and safety audits
+        run: |
+          set -Eeuo pipefail
+          git merge-base --is-ancestor 55babd9c651375580b3c5c10d7f37ac6213e005c HEAD
+          grep -Fxq 'CONFIG_P480_A3C=y' ci/build.config
+          python3 ci/p480_a3c_source_audit.py --root .
+          python3 ci/p480_a3c_init_order_audit.py
+          ! grep -Eq '^module_init\(p480_audio_platform_init\);' drivers/soc/qcom/p472_tg_audio/a3c/platform_init.c
+          ! grep -Eq '^module_platform_driver\(kona_asoc_machine_driver\);' drivers/soc/qcom/p472_tg_audio/a3c/kona.c
+          grep -Fq 'P480 A3c PLATFORM_SKIPPED reason=' drivers/soc/qcom/p472_tg_audio/dsp/p472_a3a_q6_init.c
+      - name: Compile only P480 A3C native Image and vmlinux (no NO-A3C rebuild)
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          mkdir -p out_A3C package/A3C package/input package/archive package/audit
+          cp ci/build.config out_A3C/.config
+          make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          cmp ci/build.config out_A3C/.config
+          make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          grep -aFq 'P481 INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=0' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CAL_REGISTER_SKIPPED reason=not_initialized' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CARD register rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_SKIPPED name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_DIR_TRIM name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c LINK_KEPT name=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c ROUTES added=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c INIT_FAIL stage=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c ROUTING_REGLESS_WRITE' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c INIT_MOVED fn=msm_int_audrx_init' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c AUDRX_INIT rc=0' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c PORT_MAP=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c ROUTE_KEPT sink=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c KCONTROLS count=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c SND_CARD_REGISTER rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 CARD_GATED default=0' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 CARD_ENABLE rc=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 RPM_FORBID dev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 MBHC_SKIPPED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 DAPM_BIAS_HOLD' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 BOLERO_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 LPI_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 SWR_UNCLOCKED' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 RPM dev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 VOTE clk=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 MBHC ev=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 BIAS comp=' out_A3C/arch/arm64/boot/Image
+          grep -aFq 'P481 ALIVE t=' out_A3C/arch/arm64/boot/Image
+          python3 ci/p482_vote_symbol_audit.py out_A3C package/A3C/P482-vote-symbols.txt
+          for marker in 'P482 HW_VOTE op=' 'P482 AFE_HW_VOTE block=' 'P482 AFE_HW_UNVOTE block=' 'P482 MBHC_IRQ_BLOCKED'; do
+            grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
+          done
+          python3 ci/p483_voice_audit.py out_A3C package/A3C
+          python3 ci/p484_audio_audit.py out_A3C package/A3C
+          python3 ci/p485_audio_audit.py out_A3C package/A3C
+          python3 ci/p486_audio_audit.py out_A3C package/A3C
+          python3 ci/p487_staged_audit.py out_A3C package/A3C
+          for marker in 'P483 VOICE_INIT rc=' 'P483 CVD_VERSION value=' 'P483 VOICE_AUX node=' 'P483 VOICE_KCONTROLS count=' 'P483 CARD_AUTO adsp_ready=1' 'P483 CARD_POLICY auto=' 'P483 BOLERO_MACRO_INACTIVE_ALLOWED' 'P483 BOLERO_UNCLOCKED reason='; do
+            grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
+          done
+          # Prove the caller uses the external A3b symbols, not inline stubs.
+          llvm-nm out_A3C/drivers/soc/qcom/p472_tg_audio/a3c/kona.o > package/A3C/P480-kona-symbols.txt
+          grep -Eq '[[:space:]]U[[:space:]]+bolero_set_port_map$' package/A3C/P480-kona-symbols.txt
+          grep -Eq '[[:space:]]U[[:space:]]+bolero_register_wake_irq$' package/A3C/P480-kona-symbols.txt
+          grep -Eq '[[:space:]]U[[:space:]]+bolero_info_create_codec_entry$' package/A3C/P480-kona-symbols.txt
+          cp out_A3C/.config out_A3C/System.map package/A3C/
+          cp p480-init-order-audit.json package/A3C/
+          python3 - <<'PY'
+          from pathlib import Path
+          data=Path('out_A3C/vmlinux').read_bytes()
+          want=b'5.10.252-Mangrove SMP preempt mod_unload modversions aarch64'
+          bad=b'5.10.252-Mangrove+ SMP preempt mod_unload modversions aarch64'
+          assert want in data and bad not in data, 'A3c vermagic must match original P479'
+          print('A3C_ONLY exact P479 vermagic PASS, NO FLASH')
+          PY
+      - name: P488 capacity and linked buffer proof
+        run: |
+          set -Eeuo pipefail
+          python3 ci/p488_cmdline_audit.py > package/A3C/cmdline-audit.json
+          llvm-nm -S out_A3C/vmlinux | grep -w boot_command_line > package/A3C/boot-command-line-symbol.txt
+          python3 -c 'import pathlib; s=pathlib.Path("package/A3C/boot-command-line-symbol.txt").read_text().split(); assert int(s[1],16)==4096, s'
+          cp ci/P488-CMDLINE-REVIEW.md package/A3C/
+      - name: Authenticate the FINAL P479 boot and repack A3C only
+        run: |
+          set -Eeuo pipefail
+          gh release download p479-equivalence-reference --repo GiulianoB-1/A526B-Mangrove-Kernel --pattern p479-reference-14131467025.zip --dir package/archive
+          printf '%s  %s\n' 44412b170b639ebbbf6615e4a302ec8e4a83e09a934e32da49bbc1c801755230 package/archive/p479-reference-14131467025.zip | sha256sum -c -
+          python3 - <<'PY'
+          import gzip,hashlib,json,zipfile
+          from pathlib import Path
+          from ci.p480_boot_repack import parse_boot
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          with zipfile.ZipFile('package/archive/p479-reference-14131467025.zip') as z:
+              boot=z.read(m['archive_inner_path'])
+          h=lambda b:hashlib.sha256(b).hexdigest()
+          assert h(boot)==m['original_boot_sha256']
+          assert len(boot)==m['original_boot_size']
+          p=parse_boot(boot)
+          assert h(p['dtb'])==m['original_boot_dtb_sha256']
+          assert h(p['ramdisk'])==m['original_ramdisk_sha256']
+          assert h(gzip.decompress(p['kernel']))==m['original_uncompressed_kernel_sha256']
+          assert p['cmdline']==m['cmdline']
+          assert 'nohlt' not in p['cmdline'].split()
+          Path('package/input/P479-HLT.boot.img').write_bytes(boot)
+          PY
+          gzip -n -c out_A3C/arch/arm64/boot/Image > package/input/A3C.gz
+          python3 ci/p480_p479_boot_repack.py \
+            --source package/input/P479-HLT.boot.img \
+            --kernel package/input/A3C.gz \
+            --native-image out_A3C/arch/arm64/boot/Image \
+            --variant A3C \
+            --output package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img \
+            --report package/A3C/P480-A3C-init-order-repack.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('package/A3C/P480-A3C-init-order-repack.json').read_text())
+          m=json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          assert all(j['invariants'].values()),j
+          assert j['original_P479_boot_sha256']==m['original_boot_sha256']
+          assert j['original_P479_DTB_sha256']==j['repacked_DTB_sha256']==m['original_boot_dtb_sha256']
+          assert j['original_P479_ramdisk_sha256']==j['repacked_ramdisk_sha256']==m['original_ramdisk_sha256']
+          assert j['original_P479_cmdline']==j['repacked_cmdline']==m['cmdline']
+          assert j['flash_authorized'] is False
+          print('P480 A3C only, exact real P479 container PASS; NO FLASH')
+          PY
+          # Read-only download of the existing, immutable NO-A3C artifact.
+          gh api repos/GiulianoB-1/A526B-Mangrove-Source/actions/artifacts/14672521007 > package/audit/fallback-artifact.json
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/GiulianoB-1/A526B-Mangrove-Source/actions/artifacts/14672521007/zip \
+            -o package/archive/NO-A3C-pinned.zip
+          printf '%s  %s\n' 6b7e9b868d1dbd498ceb06f08900018397da8a09823ef79e126714f616f0053f package/archive/NO-A3C-pinned.zip | sha256sum -c -
+          # Compare actual repacked kernels rather than compressed boot strings.
+          python3 - <<'PY'
+          import gzip, hashlib, json, subprocess, zipfile
+          from pathlib import Path
+          from ci.p480_boot_repack import parse_boot
+
+          new_boot = Path('package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img')
+          old_boot = Path('package/input/P479-HLT.boot.img')
+          native = Path('out_A3C/arch/arm64/boot/Image')
+          meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
+          new = parse_boot(new_boot.read_bytes())
+          old = parse_boot(old_boot.read_bytes())
+          new_kernel = gzip.decompress(new['kernel'])
+          old_kernel = gzip.decompress(old['kernel'])
+          assert new_kernel == native.read_bytes(), 'repack mismatch: kernel not from this build'
+          def strings(data):
+              p = subprocess.run(['strings', '-a'], input=data, capture_output=True, check=True)
+              return p.stdout
+          current = strings(new_kernel)
+          baseline = strings(old_kernel)
+          fallback_meta = json.loads(Path('package/audit/fallback-artifact.json').read_text())
+          assert fallback_meta['id'] == 14672521007
+          assert fallback_meta['workflow_run']['id'] == 44809264636
+          assert fallback_meta['workflow_run']['head_sha'] == '91e61c94908a9f6fe21b12564b60a4aa26878aca'
+          assert fallback_meta['digest'] == 'sha256:6b7e9b868d1dbd498ceb06f08900018397da8a09823ef79e126714f616f0053f'
+          with zipfile.ZipFile('package/archive/NO-A3C-pinned.zip') as z:
+              names = [n for n in z.namelist() if n.rsplit('/',1)[-1] == 'P480-NO-A3C-HLT-P479-TEMPLATE-DO-NOT-FLASH.img']
+              assert len(names) == 1, names
+              fallback_boot = z.read(names[0])
+          fallback = parse_boot(fallback_boot)
+          fallback_strings = strings(gzip.decompress(fallback['kernel']))
+          assert fallback['cmdline'] == meta['cmdline']
+          assert not any(x == 'nohlt' or x.startswith('nohlt=') for x in fallback['cmdline'].split())
+          assert hashlib.sha256(fallback['dtb']).hexdigest() == meta['original_boot_dtb_sha256']
+          assert hashlib.sha256(fallback['ramdisk']).hexdigest() == meta['original_ramdisk_sha256']
+          markers = [
+              b'P480 A3c LINK_DIR_TRIM name=',
+              b'P480 A3c LINK_KEPT name=',
+              b'P480 A3c LINK_SKIPPED name=',
+              b'P480 A3c ROUTES added=',
+              b'P480 A3c INIT_FAIL stage=',
+              b'P480 A3c ROUTING_REGLESS_WRITE',
+              b'P480 A3c INIT_MOVED fn=msm_int_audrx_init',
+              b'P480 A3c AUDRX_INIT rc=0',
+              b'P480 A3c PORT_MAP=',
+              b'P480 A3c ROUTE_KEPT sink=',
+              b'P480 A3c KCONTROLS count=',
+              b'P481 CARD_GATED default=0',
+              b'P481 CARD_ENABLE rc=',
+              b'P481 RPM_FORBID dev=',
+              b'P481 MBHC_SKIPPED',
+              b'P481 DAPM_BIAS_HOLD',
+              b'P481 BOLERO_UNCLOCKED',
+              b'P481 LPI_UNCLOCKED',
+              b'P481 SWR_UNCLOCKED',
+              b'P481 RPM dev=',
+              b'P481 VOTE clk=',
+              b'P481 MBHC ev=',
+              b'P481 BIAS comp=',
+              b'P481 ALIVE t=',
+              b'P482 HW_VOTE op=',
+              b'P482 AFE_HW_VOTE block=',
+              b'P482 AFE_HW_UNVOTE block=',
+              b'P482 MBHC_IRQ_BLOCKED',
+              b'P483 VOICE_INIT rc=',
+              b'P483 CVD_VERSION value=',
+              b'P483 VOICE_AUX node=',
+              b'P483 VOICE_KCONTROLS count=',
+              b'P483 CARD_AUTO adsp_ready=1',
+              b'P483 CARD_POLICY auto=',
+              b'P483 BOLERO_MACRO_INACTIVE_ALLOWED',
+              b'P483 BOLERO_UNCLOCKED reason=',
+              b'P484 AUX_INIT',
+              b'P484 AUX_BIND',
+              b'P484 COMP_INIT',
+              b'P484 AUX_STATE',
+              b'P484 AUX_INIT_MISSED',
+              b'P484 SWR_IRQ',
+              b'P484 SWR_WAKE',
+              b'P484 WCD_IRQ',
+              b'P484 MBHC_REGS',
+              b'P484 CDC_DMA_START',
+              b'P484 CDC_DMA_VOTE',
+              b'P484 CDC_DMA_ROLLBACK',
+              b'P484 TX_CHMAP',
+              b'P484 BOLERO_ACCESS',
+              b'P485 TX_DAPM',
+              b'P486 TX_SEQ step=',
+              b'P486 CARD_AUTO source=apr_loaded',
+              b'P485 HPH_VOLUME',
+              b'P485 HPH_IMPEDANCE',
+              b'P485 MBHC_DUMP',
+              b'P485 ASM_MAP_ERROR',
+              b'P485 ROUTES kept=',
+              b'P480 A3c SND_CARD_REGISTER rc=',
+              b'P480 A3c CARD_NUMBER number=%d id=%s name=%s driver=%s',
+          ]
+          assert all(m in current for m in markers), 'missing A3C markers in repacked Image'
+          assert all(m not in baseline for m in markers), 'A3C markers found in pinned P479'
+          assert all(m not in fallback_strings for m in markers), 'A3C markers found in pinned NO-A3C'
+          assert b'P480 A3c ' not in fallback_strings, 'generic A3c diagnostic found in NO-A3C'
+          assert new['cmdline'] == old['cmdline'] == meta['cmdline']
+          assert not any(x == 'nohlt' or x.startswith('nohlt=') for x in new['cmdline'].split())
+          assert hashlib.sha256(new['dtb']).hexdigest() == meta['original_boot_dtb_sha256']
+          assert hashlib.sha256(new['ramdisk']).hexdigest() == meta['original_ramdisk_sha256']
+          proof = {
+              'scope': 'A3C repacked Image versus immutable P479 and existing P480 NO-A3C kernel',
+              'marker_strings_present_only_in_A3C': [m.decode() for m in markers],
+              'original_P479_kernel_has_these_markers': False,
+              'existing_P480_NO_A3C_artifact_unchanged': True,
+              'existing_P480_NO_A3C_artifact_id': 14672521007,
+              'existing_P480_NO_A3C_workflow_run': 44809264636,
+              'existing_P480_NO_A3C_binary_compared_in_this_job': True,
+              'existing_P480_NO_A3C_archive_sha256': '6b7e9b868d1dbd498ceb06f08900018397da8a09823ef79e126714f616f0053f',
+              'existing_P480_NO_A3C_boot_sha256': hashlib.sha256(fallback_boot).hexdigest(),
+              'existing_P480_NO_A3C_kernel_marker_free': True,
+              'A3C_image_matches_compiled_Image': True,
+              'original_P479_DTB_sha256': meta['original_boot_dtb_sha256'],
+              'original_P479_ramdisk_sha256': meta['original_ramdisk_sha256'],
+              'nohlt_absent': True,
+              'flash_authorized': False,
+          }
+          Path('package/A3C/P480-A3C-strings-proof.json').write_text(json.dumps(proof, indent=2) + '\n')
+          print('A3C_ONLY strings proof PASS; pinned P479 and NO-A3C marker-free; nohlt absent; NO FLASH')
+          PY
+          cp ci/P480-test-notes.md package/A3C/
+          cp ci/P480-A3C-DIRECTION-EXPECTED.csv package/A3C/
+          cp ci/P480-A3C-DAPM-ROUTES-EXPECTED.csv package/A3C/
+          cp ci/P480-A3C-DAPM-REVIEW.md package/A3C/
+          cp ci/P480-A3C-DAPM-FIX4-REVIEW.md package/A3C/
+          cp ci/P481-DIAGNOSTIC-REVIEW.md package/A3C/
+          cp ci/P482-RESOURCE-MANAGER-REVIEW.md package/A3C/
+          cp ci/P483-REVIEW.md package/A3C/
+          cp ci/P484-REVIEW.md package/A3C/
+          cp ci/P486-REVIEW.md ci/P486-TX-SEQUENCE.csv ci/P487-STAGED-REVIEW.md package/A3C/
+          cp ci/P485-REVIEW.md ci/P485-DAPM-REGISTER-DIFF.json ci/P485-DAPM-ROUTES-EXPECTED.csv ci/P485-Q6-RETURN-AUDIT.csv package/A3C/
+          cp ci/p480_collect_audio_readonly.sh package/A3C/
+          echo 'P487 STAGED cleanup and SCM/IPA/ADSP autostart only; TAS not ported, not final P487. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P487-STAGED-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt P484-REVIEW.md P484-symbols.txt P485-REVIEW.md P485-DAPM-REGISTER-DIFF.json P485-DAPM-ROUTES-EXPECTED.csv P485-Q6-RETURN-AUDIT.csv P485-proof.txt P486-REVIEW.md P486-TX-SEQUENCE.csv P486-proof.txt P487-STAGED-REVIEW.md P487-staged-proof.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          sha256sum package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img
+          rm -rf package/archive package/input
+      - name: Finalize exact staged-header Review 6 package
+        run: |
+          set -Eeuo pipefail
+          python3 ci/review6_package.py --variant P488-CMDLINE --source "$GITHUB_SHA"
+          (cd package/A3C && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Upload audited review package only (NO FLASH)
+        uses: actions/upload-artifact@v4
+        with:
+          name: P488-CMDLINE-REVIEW6-${{ github.sha }}
+          path: package/A3C/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
