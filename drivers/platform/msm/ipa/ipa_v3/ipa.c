@@ -20,6 +20,7 @@
 #include <linux/jiffies.h>
 #include <linux/kobject.h>
 #include <linux/mutex.h>
+#include <linux/a52_autostart.h>
 #include <linux/qcom_scm.h>
 #include <linux/sysfs.h>
 
@@ -262,20 +263,25 @@ int a52_p470_ipa_wait_ready(unsigned long timeout)
 }
 EXPORT_SYMBOL_GPL(a52_p470_ipa_wait_ready);
 
-static ssize_t p470_a4_arm_store(struct kobject *kobj,
-                                struct kobj_attribute *attr,
-                                const char *buf, size_t count)
+/* Serialize the existing one-shot and cache the actual reprobe result. */
+static DEFINE_MUTEX(p487_ipa_arm_lock);
+static int p487_ipa_arm_result;
+
+int a52_p487_ipa_arm_once(bool automatic)
 {
     struct device *dev = NULL;
     int ret = 0;
 
-    if (!capable(CAP_SYS_ADMIN))
-        return -EPERM;
-    if (!sysfs_streq(buf, "1"))
-        return -EINVAL;
-    if (atomic_cmpxchg(&p470_a4_armed, 0, 1))
-        return -EALREADY;
-    pr_warn("P470 IPA ARM one_shot=1 authorized=CAP_SYS_ADMIN\n");
+    mutex_lock(&p487_ipa_arm_lock);
+    if (atomic_cmpxchg(&p470_a4_armed, 0, 1)) {
+        ret = automatic && p487_ipa_arm_result ?
+              p487_ipa_arm_result : -EALREADY;
+        goto unlock;
+    }
+    if (automatic)
+        pr_warn("P470 IPA ARM one_shot=1 authorized=P487_KERNEL\n");
+    else
+        pr_warn("P470 IPA ARM one_shot=1 authorized=CAP_SYS_ADMIN\n");
     mutex_lock(&p470_a4_lock);
     if (p470_a4_deferred)
         dev = get_device(p470_a4_deferred);
@@ -284,11 +290,26 @@ static ssize_t p470_a4_arm_store(struct kobject *kobj,
         ret = device_reprobe(dev);
         put_device(dev);
     }
-    if (ret) {
+    if (ret)
         pr_err("P470 IPA ARM reprobe rc=%d (no forced modem boot)\n", ret);
-        return ret;
-    }
-    return count;
+    p487_ipa_arm_result = ret;
+unlock:
+    mutex_unlock(&p487_ipa_arm_lock);
+    return ret;
+}
+
+static ssize_t p470_a4_arm_store(struct kobject *kobj,
+                                struct kobj_attribute *attr,
+                                const char *buf, size_t count)
+{
+    int ret;
+
+    if (!capable(CAP_SYS_ADMIN))
+        return -EPERM;
+    if (!sysfs_streq(buf, "1"))
+        return -EINVAL;
+    ret = a52_p487_ipa_arm_once(false);
+    return ret ? ret : count;
 }
 static struct kobj_attribute p470_a4_enable_attr =
     __ATTR(enable, 0200, NULL, p470_a4_arm_store);

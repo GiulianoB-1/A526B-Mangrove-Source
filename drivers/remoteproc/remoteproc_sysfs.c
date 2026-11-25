@@ -4,6 +4,7 @@
  */
 
 #include <linux/remoteproc.h>
+#include <linux/a52_autostart.h>
 #include <linux/slab.h>
 #include <trace/hooks/remoteproc.h>
 
@@ -242,7 +243,12 @@ static ssize_t state_store(struct device *dev,
 					atomic_read(&rproc->power));
 			}
 		} else {
-			ret = rproc_boot(rproc);
+#ifdef CONFIG_P480_A3C
+			if (a52_p487_autostart_enabled() && a52_p487_is_adsp(rproc))
+				ret = a52_p487_adsp_start_once(rproc);
+			else
+#endif
+				ret = rproc_boot(rproc);
 		}
 		if (ret)
 			dev_err(&rproc->dev, "Boot failed: %d\n", ret);

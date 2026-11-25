@@ -5,6 +5,7 @@
  * notifier auto-population could create a second SCM device.
  */
 #include <linux/init.h>
+#include <linux/a52_autostart.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/kobject.h>
@@ -62,13 +63,11 @@ static int a52_p458_create_scm_once(void)
 	return 0;
 }
 
-static ssize_t scm_enable_store(struct kobject *kobj,
-				struct kobj_attribute *attr,
-				const char *buf, size_t count)
+/* Shared by the original root-only knob and the late worker. */
+int a52_p487_scm_enable_once(void)
 {
 	int ret;
-	if (!sysfs_streq(buf, "1"))
-		return -EINVAL;
+
 	mutex_lock(&a52_scm_knob_lock);
 	if (a52_scm_attempted) {
 		mutex_unlock(&a52_scm_knob_lock);
@@ -79,6 +78,18 @@ static ssize_t scm_enable_store(struct kobject *kobj,
 	pr_warn("P458 SCM RUNTIME_ENABLE rc=%d available=%d once=1\n",
 		ret, qcom_scm_is_available());
 	mutex_unlock(&a52_scm_knob_lock);
+	return ret;
+}
+
+static ssize_t scm_enable_store(struct kobject *kobj,
+				struct kobj_attribute *attr,
+				const char *buf, size_t count)
+{
+	int ret;
+
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	ret = a52_p487_scm_enable_once();
 	return ret ? ret : count;
 }
 static struct kobj_attribute a52_scm_enable_attr =

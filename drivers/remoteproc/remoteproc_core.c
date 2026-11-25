@@ -30,6 +30,8 @@
 #include <linux/debugfs.h>
 #include <linux/rculist.h>
 #include <linux/remoteproc.h>
+#include <linux/a52_autostart.h>
+#include <linux/of.h>
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 #include <linux/platform_device.h>
@@ -2051,6 +2053,62 @@ unlock_mutex:
 	return ret;
 }
 EXPORT_SYMBOL(rproc_boot);
+
+#ifdef CONFIG_P480_A3C
+/* Match only the A52 ADSP, not MSS/CDSP or a guessed remoteproc index. */
+bool a52_p487_is_adsp(struct rproc *rproc)
+{
+	return rproc && rproc->dev.parent && rproc->dev.parent->of_node &&
+		of_machine_is_compatible("qcom,lagoon") &&
+		of_device_is_compatible(rproc->dev.parent->of_node,
+					"qcom,sm6350-adsp-pas");
+}
+
+struct rproc *a52_p487_find_adsp(void)
+{
+	struct rproc *rproc, *found = NULL;
+
+	mutex_lock(&rproc_list_mutex);
+	list_for_each_entry(rproc, &rproc_list, node) {
+		if (!a52_p487_is_adsp(rproc))
+			continue;
+		if (!rproc->dev.parent->driver ||
+		    !try_module_get(rproc->dev.parent->driver->owner))
+			break;
+		get_device(&rproc->dev);
+		found = rproc;
+		break;
+	}
+	mutex_unlock(&rproc_list_mutex);
+	return found; /* caller pairs with rproc_put() */
+}
+
+static DEFINE_MUTEX(p487_adsp_start_lock);
+static bool p487_adsp_attempted;
+
+int a52_p487_adsp_start_once(struct rproc *rproc)
+{
+	int ret;
+
+	if (!a52_p487_is_adsp(rproc))
+		return -ENODEV;
+	mutex_lock(&p487_adsp_start_lock);
+	if (p487_adsp_attempted || READ_ONCE(rproc->state) == RPROC_RUNNING) {
+		ret = -EALREADY;
+		goto unlock;
+	}
+	if (READ_ONCE(rproc->state) != RPROC_OFFLINE ||
+	    atomic_read(&rproc->power)) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+	p487_adsp_attempted = true;
+	ret = rproc_boot(rproc);
+unlock:
+	mutex_unlock(&p487_adsp_start_lock);
+	return ret;
+}
+#endif
 
 /**
  * rproc_shutdown() - power off the remote processor

@@ -560,6 +560,7 @@ jobs:
           python3 ci/p484_audio_audit.py out_A3C package/A3C
           python3 ci/p485_audio_audit.py out_A3C package/A3C
           python3 ci/p486_audio_audit.py out_A3C package/A3C
+          python3 ci/p487_staged_audit.py out_A3C package/A3C
           for marker in 'P483 VOICE_INIT rc=' 'P483 CVD_VERSION value=' 'P483 VOICE_AUX node=' 'P483 VOICE_KCONTROLS count=' 'P483 CARD_AUTO adsp_ready=1' 'P483 CARD_POLICY auto=' 'P483 BOLERO_MACRO_INACTIVE_ALLOWED' 'P483 BOLERO_UNCLOCKED reason='; do
             grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
           done
@@ -607,7 +608,7 @@ jobs:
             --kernel package/input/A3C.gz \
             --native-image out_A3C/arch/arm64/boot/Image \
             --variant A3C \
-            --output package/A3C/MANGROVE-P486-A3C-HLT.boot.img \
+            --output package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img \
             --report package/A3C/P480-A3C-init-order-repack.json
           python3 - <<'PY'
           import json
@@ -636,7 +637,7 @@ jobs:
           from pathlib import Path
           from ci.p480_boot_repack import parse_boot
 
-          new_boot = Path('package/A3C/MANGROVE-P486-A3C-HLT.boot.img')
+          new_boot = Path('package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img')
           old_boot = Path('package/input/P479-HLT.boot.img')
           native = Path('out_A3C/arch/arm64/boot/Image')
           meta = json.loads(Path('ci/P479-boot-provenance.json').read_text())
@@ -764,18 +765,18 @@ jobs:
           cp ci/P482-RESOURCE-MANAGER-REVIEW.md package/A3C/
           cp ci/P483-REVIEW.md package/A3C/
           cp ci/P484-REVIEW.md package/A3C/
-          cp ci/P486-REVIEW.md ci/P486-TX-SEQUENCE.csv package/A3C/
+          cp ci/P486-REVIEW.md ci/P486-TX-SEQUENCE.csv ci/P487-STAGED-REVIEW.md package/A3C/
           cp ci/P485-REVIEW.md ci/P485-DAPM-REGISTER-DIFF.json ci/P485-DAPM-ROUTES-EXPECTED.csv ci/P485-Q6-RETURN-AUDIT.csv package/A3C/
           cp ci/p480_collect_audio_readonly.sh package/A3C/
-          echo 'P486 TX DAPM event ordering and real APR ready gate; hardware validation pending. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
-          (cd package/A3C && sha256sum MANGROVE-P486-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt P484-REVIEW.md P484-symbols.txt P485-REVIEW.md P485-DAPM-REGISTER-DIFF.json P485-DAPM-ROUTES-EXPECTED.csv P485-Q6-RETURN-AUDIT.csv P485-proof.txt P486-REVIEW.md P486-TX-SEQUENCE.csv P486-proof.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
-          sha256sum package/A3C/MANGROVE-P486-A3C-HLT.boot.img
+          echo 'P487 STAGED cleanup and SCM/IPA/ADSP autostart only; TAS not ported, not final P487. NO FLASH UNTIL CLAUDE REVIEWS.' > package/A3C/README-DO-NOT-FLASH.txt
+          (cd package/A3C && sha256sum MANGROVE-P487-STAGED-A3C-HLT.boot.img P480-A3C-init-order-repack.json P480-A3C-strings-proof.json P480-A3C-DIRECTION-EXPECTED.csv P480-A3C-DAPM-ROUTES-EXPECTED.csv P480-A3C-DAPM-REVIEW.md P480-A3C-DAPM-FIX4-REVIEW.md P481-DIAGNOSTIC-REVIEW.md P480-kona-symbols.txt P482-vote-symbols.txt P482-RESOURCE-MANAGER-REVIEW.md P483-REVIEW.md P483-voice-controls.txt P483-voice-symbols.txt P484-REVIEW.md P484-symbols.txt P485-REVIEW.md P485-DAPM-REGISTER-DIFF.json P485-DAPM-ROUTES-EXPECTED.csv P485-Q6-RETURN-AUDIT.csv P485-proof.txt P486-REVIEW.md P486-TX-SEQUENCE.csv P486-proof.txt P487-STAGED-REVIEW.md P487-staged-proof.txt p480_collect_audio_readonly.sh p480-init-order-audit.json .config System.map > SHA256SUMS && sha256sum -c SHA256SUMS)
+          sha256sum package/A3C/MANGROVE-P487-STAGED-A3C-HLT.boot.img
           rm -rf package/archive package/input
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: P486-A3C-FINAL-P479-${{ github.sha }}
+          name: P487-STAGED-A3C-FINAL-P479-${{ github.sha }}
           path: |
             package/A3C/
             p480-init-order-audit.json
