@@ -1,0 +1,33 @@
+name: One-shot verified P485 source tag (NO FLASH)
+on:
+  push:
+    branches: [ci/tag-verified-p485]
+    paths: ['.github/workflows/tag-verified-p485.yml']
+permissions:
+  contents: write
+jobs:
+  tag:
+    if: github.repository == 'GiulianoB-1/A526B-Mangrove-Source' && github.ref == 'refs/heads/ci/tag-verified-p485'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify exact P485 ancestry and create immutable lightweight tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          target=8f2008903bec32cfd5b0ce0cb42cf2415f51c9bf
+          tag=verified/p485-headphone-jack-and-ipa
+          git merge-base --is-ancestor "$target" HEAD
+          grep -Fq "$target" ci/VERIFIED.md
+          grep -Fq '6b1ea921d07c440e74277f07a6d243e5bde5b2bb3fc6dff4385b3a5d160a82e0' ci/VERIFIED.md
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$target"
+          else
+            git tag "$tag" "$target"
+            git push origin "refs/tags/$tag"
+          fi
+          test "$(git ls-remote --tags origin "refs/tags/$tag" | cut -f1)" = "$target"
+          printf 'Verified tag: %s -> %s\n' "$tag" "$target" >> "$GITHUB_STEP_SUMMARY"
