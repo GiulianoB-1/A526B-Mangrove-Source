@@ -1,0 +1,44 @@
+{
+  "repository": "micr0softstore/samsung_android_kernel_a52xq",
+  "ref": "6bf351bd",
+  "source": "techpack/audio/asoc/codecs/tas256x/",
+  "files": [
+    {
+      "path": "os_layer/inc/tas256x-codec.h",
+      "blob": "5d65dcae5893cfd30243b134a6dd35eecc42890e"
+    },
+    {
+      "path": "os_layer/inc/tas256x-regmap.h",
+      "blob": "8152b2508ec69e102eee9b1e4dff55e260d817d5"
+    },
+    {
+      "path": "os_layer/src/tas256x-codec.c",
+      "blob": "e46221f2c49746854f44c6dc093f7ade8ae85bc9"
+    },
+    {
+      "path": "os_layer/src/tas256x-regmap.c",
+      "blob": "64fd62ae92e834d3cfb09b7c6065d4441a827a62"
+    },
+    {
+      "path": "physical_layer/inc/tas2562.h",
+      "blob": "6e30811fdd6e2383050ea47b3b5b341f89dafc74"
+    },
+    {
+      "path": "physical_layer/inc/tas2564.h",
+      "blob": "864ee718158e4f30edc23864cb3b26a9484b4a62"
+    },
+    {
+      "path": "physical_layer/inc/tas256x-device.h",
+      "blob": "fbc7d3119ee2da81814c26106514b3f513180cae"
+    },
+    {
+      "path": "physical_layer/inc/tas256x.h",
+      "blob": "aece6cf60c56b90b023568f84972e8d000c94944"
+    },
+    {
+      "path": "physical_layer/src/tas256x.c",
+      "blob": "764fbeac0281870b1061fb2ccf10e41ab6782555"
+    }
+  ],
+  "enabled": false
+}
