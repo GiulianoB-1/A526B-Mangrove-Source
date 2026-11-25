@@ -3,6 +3,7 @@
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/a52_phase447.h>
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
 #include <linux/msm_kgsl.h>
@@ -3067,7 +3068,7 @@ static int a52_kgsl_smmu_hold(struct kgsl_device *device, int state)
     }
     device->a52_smmu_rpm_dev = &pdev->dev; /* holds of_find_device ref */
     device->a52_smmu_rpm_held = true;
-    pr_warn("P446T KGSL_SMMU_HOLD get reason=%d rc=%d usage=%d\n",
+    a52_diag_log_if(false, pr_warn, "P446T KGSL_SMMU_HOLD get reason=%d rc=%d usage=%d\n",
             state, ret, atomic_read(&pdev->dev.power.usage_count));
     return 0;
 }
@@ -3084,7 +3085,7 @@ void a52_kgsl_smmu_put(struct kgsl_device *device, int state)
     device->a52_smmu_rpm_dev = NULL;
     pm_runtime_mark_last_busy(dev);
     pm_runtime_put_autosuspend(dev);
-    pr_warn("P446T KGSL_SMMU_HOLD put reason=%d usage=%d\n",
+    a52_diag_log_if(false, pr_warn, "P446T KGSL_SMMU_HOLD put reason=%d usage=%d\n",
             state, atomic_read(&dev->power.usage_count));
     put_device(dev);
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2017-2018, The Linux foundation. All rights reserved.
 
+#include <linux/a52_phase447.h>
 #include <linux/clk.h>
 #include <linux/console.h>
 #include <linux/io.h>
@@ -1019,9 +1020,9 @@ static void p473_b3_log_clk_table(struct qcom_geni_serial_port *port,
         return;
     }
     logged = true;
-    dev_info(uport->dev, "P473 B3 CLK_TBL n=%d\n", n);
+    a52_diag_log_if(false, dev_info, uport->dev, "P473 B3 CLK_TBL n=%d\n", n);
     for (i = 0; i < n; i++)
-        dev_info(uport->dev, "P473 B3 CLK_TBL idx=%d rate=%lu\n",
+        a52_diag_log_if(false, dev_info, uport->dev, "P473 B3 CLK_TBL idx=%d rate=%lu\n",
                  i, tbl[i]);
 }
 
@@ -1091,7 +1092,7 @@ static void qcom_geni_serial_set_termios(struct uart_port *uport,
                                 "P473 B3 BAUD err_ppm=%ld too large rc=-22\n",
                                 err_ppm);
                 }
-                dev_info(uport->dev,
+                a52_diag_log_if(false, dev_info, uport->dev,
                          "P473 B3 BAUD baud=%u qup_ver=0x%x samp=%u desired=%lu src=%lu idx=%u div=%u err_ppm=%ld\n",
                          baud, ver, sampling_rate, desired, src, idx,
                          clk_div, err_ppm);
@@ -1107,7 +1108,7 @@ static void qcom_geni_serial_set_termios(struct uart_port *uport,
 	port->clk_rate = clk_rate;
 	p473_opp_rc = dev_pm_opp_set_rate(uport->dev, clk_rate);
 	if (p473_b3_is_se1(uport)) {
-		dev_info(uport->dev, "P473 B3 BAUD set opp_rc=%d actual=%lu\n",
+		a52_diag_log_if(p473_opp_rc != 0, dev_info, uport->dev, "P473 B3 BAUD set opp_rc=%d actual=%lu\n",
 			 p473_opp_rc, clk_get_rate(port->se.clk));
 		if (p473_opp_rc || clk_get_rate(port->se.clk) != clk_rate)
 			dev_err(uport->dev, "P473 B3 BAUD OPP mismatch rc=%d\n", p473_opp_rc);
@@ -1199,7 +1200,7 @@ static void qcom_geni_serial_set_termios(struct uart_port *uport,
 out_restart_rx:
 	qcom_geni_serial_start_rx(uport);
 	if (p473_b3_is_se1(uport))
-		dev_info(uport->dev, "P473 B3 RFR before=%x after=%x\n",
+		a52_diag_log_if(false, dev_info, uport->dev, "P473 B3 RFR before=%x after=%x\n",
 			 p473_rfr_before,
 			 readl(uport->membase + SE_UART_MANUAL_RFR));
 }

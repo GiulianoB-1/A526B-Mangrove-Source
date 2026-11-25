@@ -3,6 +3,7 @@
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  */
 
+#include <linux/a52_phase447.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -1562,7 +1563,7 @@ static int gmu_disable_gdsc(struct kgsl_device *device)
 		pre_valid = true;
 	}
 	a52_gpu_cx_dump_votes(gmu->cx_gdsc, "before_disable");
-	dev_warn(&gmu->pdev->dev,
+	a52_diag_log_if(false, dev_warn, &gmu->pdev->dev,
 		 "P446S GMU_CX BEGIN pid=%d comm=%s gdscr_pre=%08x valid=%u timeout_ms=%u\n",
 		 task_pid_nr(current), current->comm, before, pre_valid,
 		 CX_GDSC_TIMEOUT);
@@ -1580,7 +1581,7 @@ static int gmu_disable_gdsc(struct kgsl_device *device)
 		gmu_core_regread(device, A6XX_GPU_CC_CX_GDSCR, &after);
 		post_valid = true;
 	}
-	dev_warn(&gmu->pdev->dev,
+	a52_diag_log_if(ret != 0, dev_warn, &gmu->pdev->dev,
 		 "P446S GMU_CX AFTER_DISABLE rc=%d gdscr_pre=%08x pre_valid=%u gdscr_post=%08x post_valid=%u elapsed_ms=%llu\n",
 		 ret, before, pre_valid, after, post_valid,
 		 (unsigned long long)((ktime_get_boottime_ns() - start_ns) / 1000000));
@@ -1595,7 +1596,7 @@ static int gmu_disable_gdsc(struct kgsl_device *device)
 	t = jiffies + msecs_to_jiffies(CX_GDSC_TIMEOUT);
 	do {
 		if (!gmu_core_dev_cx_is_on(device)) {
-			dev_warn(&gmu->pdev->dev,
+			a52_diag_log_if(false, dev_warn, &gmu->pdev->dev,
 				 "P446S GMU_CX POLL rc=0 poll_ms=%llu gdscr_post=%08x post_valid=%u\n",
 				 (unsigned long long)((ktime_get_boottime_ns() - poll_start_ns) / 1000000),
 				 after, post_valid);
@@ -1605,7 +1606,7 @@ static int gmu_disable_gdsc(struct kgsl_device *device)
 	} while (!(time_after(jiffies, t)));
 
 	if (!gmu_core_dev_cx_is_on(device)) {
-		dev_warn(&gmu->pdev->dev,
+		a52_diag_log_if(false, dev_warn, &gmu->pdev->dev,
 			 "P446S GMU_CX POLL rc=0 boundary=1 poll_ms=%llu\n",
 			 (unsigned long long)((ktime_get_boottime_ns() - poll_start_ns) / 1000000));
 		return 0;

@@ -248,7 +248,7 @@ static irqreturn_t geni_i2c_irq(int irq, void *dev)
 	atomic_inc(&gi2c->a52z_irq_count);
 	if (gi2c->se.a52_legacy_ahb &&
 	    atomic_read(&gi2c->a52z_irq_count) <= 4)
-		dev_info(gi2c->se.dev,
+		a52_diag_log_if(false, dev_info, gi2c->se.dev,
 			"P446AA SE8 IRQ count=%d raw=%#x enable=%#x status=%#x cmd=%#x\n",
 			atomic_read(&gi2c->a52z_irq_count),
 			readl_relaxed(base+0x610), readl_relaxed(base+0x614),
@@ -894,7 +894,7 @@ static int a52ac_gsi_xfer(struct geni_i2c_dev *gi2c,
 			ret=-EIO;
 			break;
 		}
-		if (a52ag_verbose) dev_info_ratelimited(dev,"P446AE DMA_MAP dev=%s dir=%s iova=%pad len=%u rc=0\n",
+		if (a52ag_verbose) a52_diag_log_if(false, dev_info_ratelimited, dev,"P446AE DMA_MAP dev=%s dir=%s iova=%pad len=%u rc=0\n",
 			dev_name(mapdev),rdmsg ? "rx" : "tx",&phys,msg->len);
 		cfg.dword[0]=MSM_GPI_I2C_CONFIG0_TRE_DWORD0(3,
 				clk->t_cycle_cnt,clk->t_high_cnt,clk->t_low_cnt);
@@ -920,7 +920,7 @@ static int a52ac_gsi_xfer(struct geni_i2c_dev *gi2c,
 			sg_set_buf(&rxsg,&data,sizeof(data));
 			rd=dmaengine_prep_slave_sg(gi2c->a52ac_rx,&rxsg,1,
 					DMA_DEV_TO_MEM,DMA_PREP_INTERRUPT|DMA_CTRL_ACK);
-				if (a52ag_verbose) dev_info(dev,"P446AF GSI RX_PREP chan=%px tre=%px sg=%px len=%u\n",
+				if (a52ag_verbose) a52_diag_log_if(false, dev_info, dev,"P446AF GSI RX_PREP chan=%px tre=%px sg=%px len=%u\n",
 				gi2c->a52ac_rx,&data,&rxsg,msg->len);
 			if (IS_ERR_OR_NULL(rd) || !virt_addr_valid(rd)) {
 				ret = IS_ERR(rd) ? PTR_ERR(rd) : -EIO;
@@ -933,7 +933,7 @@ static int a52ac_gsi_xfer(struct geni_i2c_dev *gi2c,
 			{
 				dma_cookie_t cookie=dmaengine_submit(rd);
 				ret=dma_submit_error(cookie);
-				if (a52ag_verbose) dev_info(dev,
+				if (a52ag_verbose) a52_diag_log_if(false, dev_info, dev,
 					"P446AF GSI RX_SUBMIT desc=%px cookie=%d rc=%d\n",
 					rd,cookie,ret);
 				if (ret) goto cleanup;
@@ -957,12 +957,12 @@ static int a52ac_gsi_xfer(struct geni_i2c_dev *gi2c,
 		{
 			dma_cookie_t cookie=dmaengine_submit(td);
 			ret=dma_submit_error(cookie);
-			if (a52ag_verbose) dev_info_ratelimited(dev,
+			if (a52ag_verbose) a52_diag_log_if(false, dev_info_ratelimited, dev,
 				"P446AF GSI TX_SUBMIT desc=%px cookie=%d rc=%d\n",
 				td,cookie,ret);
 			if (ret)goto cleanup;
 		}
-		if (a52ag_verbose) dev_info_ratelimited(dev,"P446AC GSI XFER_START msg=%d/%d addr=%#x dir=%c len=%u segs=%d\n",
+		if (a52ag_verbose) a52_diag_log_if(false, dev_info_ratelimited, dev,"P446AC GSI XFER_START msg=%d/%d addr=%#x dir=%c len=%u segs=%d\n",
 			i+1,num,msg->addr,rdmsg?'R':'W',msg->len,n);
 		dma_async_issue_pending(gi2c->a52ac_tx);
 		timeout=wait_for_completion_timeout(&gi2c->done,msecs_to_jiffies(1100));
@@ -994,7 +994,7 @@ cleanup:
 		if (i == 0)
 			if (a52ag_verbose) dev_info(dev, "P446AD I2C GSI first_xfer rc=%d dir=%c len=%u\n",
 				 ret, rdmsg ? 'R' : 'W', msg->len);
-		if (a52ag_verbose) dev_info_ratelimited(dev,"P446AC GSI XFER_DONE msg=%d/%d rc=%d\n",i+1,num,ret);
+		if (a52ag_verbose) a52_diag_log_if(ret != 0, dev_info_ratelimited, dev,"P446AC GSI XFER_DONE msg=%d/%d rc=%d\n",i+1,num,ret);
 		if (ret)break;
 	}
 	if (time_after(jiffies,READ_ONCE(a52ag_last_summary)+5*HZ)) {
@@ -1018,7 +1018,7 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 			gi2c->irq,atomic_read(&gi2c->a52z_irq_count),
 			gi2c->a52z_bus_client,gi2c->a52z_bus_active);
 	if (gi2c->se.a52_legacy_ahb && !atomic_read(&gi2c->a52y_first_xfer))
-		dev_info(gi2c->se.dev,
+		a52_diag_log_if(false, dev_info, gi2c->se.dev,
 			"P446AA SE8 BEFORE se_clk_hz=%lu mclk_cfg=%#x clk_ro=%#x clk_sel=%#x output=%#x irq_en=%#x ios=%#x\n",
 			clk_get_rate(gi2c->se.clk),
 			readl_relaxed(gi2c->se.base+0x48),
@@ -1129,7 +1129,7 @@ static int a52z_bus_vote(struct geni_i2c_dev *gi2c, bool active)
 		return 0;
 	rc=msm_bus_scale_client_update_request(gi2c->a52z_bus_client,
 						active ? 1 : 0);
-	dev_info(gi2c->se.dev,
+	a52_diag_log_if(rc != 0, dev_info, gi2c->se.dev,
 		"P446Z I2C BUS_VOTE client=%u active=%u case=%u core_ab=%llu core_ib=%llu mem_ab=%llu mem_ib=%llu rc=%d\n",
 		gi2c->a52z_bus_client,active,active ? 1 : 0,
 		(unsigned long long)(active ? A52Z_CORE_AB_BPS : 0),

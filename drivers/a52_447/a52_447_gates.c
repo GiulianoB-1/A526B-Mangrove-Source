@@ -12,9 +12,22 @@
 static unsigned int a52_447_wave=CONFIG_A52_WAVE_DEFAULT;
 static bool a52_447_source_cmdline;
 static bool a52_447c_verbose;
+static bool a52_diag_verbose;
+bool a52_diag_enabled(void)
+{
+	return READ_ONCE(a52_diag_verbose);
+}
+EXPORT_SYMBOL_GPL(a52_diag_enabled);
+static int __init a52_diag_parse(char *v)
+{
+	if (!v || kstrtobool(v, &a52_diag_verbose))
+		return -EINVAL;
+	return 0;
+}
+early_param("a52.diag", a52_diag_parse);
 bool a52_447c_trace_verbose(void)
 {
-	return READ_ONCE(a52_447c_verbose);
+	return READ_ONCE(a52_447c_verbose) || a52_diag_enabled();
 }
 EXPORT_SYMBOL_GPL(a52_447c_trace_verbose);
 static int __init a52_447c_parse_trace(char *v)

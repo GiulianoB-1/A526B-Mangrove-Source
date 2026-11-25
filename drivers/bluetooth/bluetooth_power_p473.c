@@ -9,6 +9,7 @@
  * with interface to power management device
  */
 
+#include <linux/a52_phase447.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -910,7 +911,7 @@ static int bt_power_populate_dt_pinfo(struct platform_device *pdev)
 		bt_power_pdata->bt_gpio_sw_ctrl  =
 			of_get_named_gpio(pdev->dev.of_node,
 						"qca,bt-sw-ctrl-gpio",  0);
-		dev_info(&pdev->dev, "P473 B2 BTPOWER sw_ctrl gpio=%d\n",
+		a52_diag_log_if(false, dev_info, &pdev->dev, "P473 B2 BTPOWER sw_ctrl gpio=%d\n",
 			 bt_power_pdata->bt_gpio_sw_ctrl);
 		if (bt_power_pdata->bt_gpio_sw_ctrl == -EPROBE_DEFER) {
 			rc = -EPROBE_DEFER;
@@ -1240,7 +1241,7 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = -EINVAL; goto p473_b1_ioctl_out;
 	}
 	p473_b1_ioctl_out:
-	pr_info("P473 BTPOWER ioctl=%x rc=%d\n", cmd, ret);
+	a52_diag_log_if(ret < 0, pr_info, "P473 BTPOWER ioctl=%x rc=%d\n", cmd, ret);
 	return ret;
 }
 

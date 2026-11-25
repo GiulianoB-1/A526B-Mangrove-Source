@@ -198,7 +198,7 @@ drm_atomic_set_crtc_for_plane(struct drm_plane_state *plane_state,
 	if (ktime_get_boottime_ns() >= 85ULL * 1000000000ULL &&
 	    plane_state && plane_state->plane &&
 	    plane_state->plane->base.id == 91)
-		pr_info("P446U SET_CRTC seq=%d plane=91 fb=%u old_crtc=%u new_crtc=%u caller=%pS\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446U SET_CRTC seq=%d plane=91 fb=%u old_crtc=%u new_crtc=%u caller=%pS\n",
 			a52_446u_request_id(),
 			plane_state->fb ? plane_state->fb->base.id : 0,
 			plane_state->crtc ? plane_state->crtc->base.id : 0,
@@ -258,7 +258,7 @@ drm_atomic_set_fb_for_plane(struct drm_plane_state *plane_state,
 	if (ktime_get_boottime_ns() >= 85ULL * 1000000000ULL &&
 	    plane_state && plane_state->plane &&
 	    plane_state->plane->base.id == 91)
-		if (a52_447c_trace_verbose()) pr_info("P446U SET_FB seq=%d plane=91 old_fb=%u new_fb=%u crtc=%u caller=%pS\n",
+		if (a52_447c_trace_verbose()) a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446U SET_FB seq=%d plane=91 old_fb=%u new_fb=%u crtc=%u caller=%pS\n",
 			a52_446u_request_id(),
 			plane_state->fb ? plane_state->fb->base.id : 0,
 			fb ? fb->base.id : 0,
@@ -1405,14 +1405,14 @@ static void a52ab_watch_power(struct drm_mode_object *obj,
 	}
 	if (phase==1 && off &&
 	    atomic_cmpxchg(&a52ab_power_phase,1,2)==1)
-		pr_info("P446AB POWER_CYCLE_OFF obj=%u prop=%s value=%llu hwc_commit=%d\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AB POWER_CYCLE_OFF obj=%u prop=%s value=%llu hwc_commit=%d\n",
 			obj->id,prop->name,(unsigned long long)val,
 			atomic_read(&a52ab_hwc_commits));
 	if (phase==2 && on &&
 	    atomic_cmpxchg(&a52ab_power_phase,2,3)==2) {
 		int base=atomic_read(&a52ab_hwc_commits);
 		atomic_set(&a52ab_resume_at,base);
-		pr_info("P446AB POST_POWER_CYCLE_BEGIN obj=%u prop=%s value=%llu base=%d next20=1\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AB POST_POWER_CYCLE_BEGIN obj=%u prop=%s value=%llu base=%d next20=1\n",
 			obj->id,prop->name,(unsigned long long)val,base);
 	}
 }
@@ -1423,7 +1423,7 @@ void a52ab_trace_set(struct drm_mode_object *obj,
 		return;
 	a52ab_watch_power(obj,prop,val); /* watch even after first 20 */
 	if (a52ab_window())
-		pr_info("P446AB PROP_SET epoch=%s commit=%d obj=%u type=%u prop=%s id=%u value=%llu pid=%d comm=%s\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AB PROP_SET epoch=%s commit=%d obj=%u type=%u prop=%s id=%u value=%llu pid=%d comm=%s\n",
 			a52ab_epoch(),atomic_read(&a52ab_hwc_commits),
 			obj->id,obj->type,prop->name,prop->base.id,
 			(unsigned long long)val,task_pid_nr(current),current->comm);
@@ -1432,7 +1432,7 @@ void a52ab_trace_get(struct drm_mode_object *obj,
 		    struct drm_property *prop, u64 val)
 {
 	if (a52ab_is_composer() && a52ab_target(obj) && a52ab_window())
-		pr_info("P446AB PROP_GET epoch=%s commit=%d obj=%u type=%u prop=%s id=%u value=%llu pid=%d comm=%s\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AB PROP_GET epoch=%s commit=%d obj=%u type=%u prop=%s id=%u value=%llu pid=%d comm=%s\n",
 			a52ab_epoch(),atomic_read(&a52ab_hwc_commits),
 			obj->id,obj->type,prop->name,prop->base.id,
 			(unsigned long long)val,task_pid_nr(current),current->comm);
@@ -1446,7 +1446,7 @@ static void a52ab_count_hwc_ioctl(struct drm_mode_atomic *arg)
 	if (n==21)
 		atomic_cmpxchg(&a52ab_power_phase,0,1);
 	if (a52ab_window())
-		pr_info("P446AB HWC_COMMIT epoch=%s seq=%d flags=%#x objects=%u pid=%d comm=%s\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AB HWC_COMMIT epoch=%s seq=%d flags=%#x objects=%u pid=%d comm=%s\n",
 			a52ab_epoch(),n,arg->flags,arg->count_objs,
 			task_pid_nr(current),current->comm);
 }
@@ -1534,7 +1534,7 @@ static void a52ac_ring_prop(u32 seq,struct drm_mode_object *obj,
 out:
 	spin_unlock_irqrestore(&a52ac_ring_lock,irqflags);
 	if (triggered)
-		pr_info("P446AC HWC_RING TRIGGER seq=%u time_ns=%llu plane91_FB_ID=0 pre=16 post=16\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AC HWC_RING TRIGGER seq=%u time_ns=%llu plane91_FB_ID=0 pre=16 post=16\n",
 			seq,(unsigned long long)ktime_get_boottime_ns());
 }
 static void a52ac_ring_end(u32 seq)
@@ -1549,7 +1549,7 @@ static void a52ac_ring_end(u32 seq)
 	}
 	spin_unlock_irqrestore(&a52ac_ring_lock,irqflags);
 	if (frozen)
-		pr_info("P446AC HWC_RING READY trigger=%u through=%u debugfs=/sys/kernel/debug/a52_446ac_hwc_requests\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AC HWC_RING READY trigger=%u through=%u debugfs=/sys/kernel/debug/a52_446ac_hwc_requests\n",
 			a52ac_trigger_seq,seq);
 }
 static int a52ac_ring_show(struct seq_file *m,void *v)
@@ -1746,7 +1746,7 @@ static void a52f_property(u32 seq,struct drm_mode_object *obj,
 	}
 	spin_unlock_irqrestore(&a52f_lock,flags);
 	if (trigger)
-		pr_info("P447 FLICKER_RING TRIGGER seq=%u plane=%u CRTC_ID=0 pre=%d post=%d time_ns=%llu\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING TRIGGER seq=%u plane=%u CRTC_ID=0 pre=%d post=%d time_ns=%llu\n",
 			seq,obj->id,A52F_RING_PRE,A52F_RING_POST,
 			(unsigned long long)ktime_get_boottime_ns());
 }
@@ -1790,40 +1790,40 @@ static void a52f_dump_fn(struct work_struct *work)
 	u32 seq,i,start,trigger=READ_ONCE(a52f_trigger);
 	u32 end=trigger+A52F_RING_POST,printed=0,dropped=0;
 	start=trigger>A52F_RING_PRE ? trigger-A52F_RING_PRE : 1;
-	pr_info("P447 FLICKER_RING DUMP_BEGIN trigger=%u range=%u..%u wanted_pre=40 wanted_post=20 slots=%u prop_cap=%u once=1\n",
+	a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING DUMP_BEGIN trigger=%u range=%u..%u wanted_pre=40 wanted_post=20 slots=%u prop_cap=%u once=1\n",
 		trigger,start,end,A52F_RING_SLOTS,A52F_RING_PROPS);
 	for (seq=start;seq<=end;seq++) {
 		const struct a52f_req *r=&a52f_ring[seq%A52F_RING_SLOTS];
 		if (r->seq!=seq) {
-			pr_info("P447 FLICKER_RING MISSING seq=%u\n",seq);
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING MISSING seq=%u\n",seq);
 			continue;
 		}
 		printed++;
 		dropped+=r->dropped_prop+r->dropped_obj;
-		pr_info("P447 FLICKER_RING REQ seq=%u ns=%llu pid=%u comm=%s flags=%#x rc=%d done=%d objects=%u/%u dropped_obj=%u props=%u dropped_prop=%u phase=%s\n",
+		a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING REQ seq=%u ns=%llu pid=%u comm=%s flags=%#x rc=%d done=%d objects=%u/%u dropped_obj=%u props=%u dropped_prop=%u phase=%s\n",
 			r->seq,(unsigned long long)r->time_ns,r->pid,r->comm,
 			r->flags,r->rc,r->done,r->nobj,r->expected_objs,
 			r->dropped_obj,r->nprop,r->dropped_prop,
 			seq==trigger?"TRIGGER":seq<trigger?"PRE":"POST");
 		for (i=0;i<r->nobj;i++) {
 			const struct a52f_object *o=&r->obj[i];
-			pr_info("P447 FLICKER_RING OBJ seq=%u index=%u id=%u type=%#x requested_props=%u\n",
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING OBJ seq=%u index=%u id=%u type=%#x requested_props=%u\n",
 				seq,i,o->id,o->type,o->requested_props);
 		}
 		for (i=0;i<r->nprop;i++) {
 			const struct a52f_prop *p=&r->prop[i];
-			pr_info("P447 FLICKER_RING PROP seq=%u index=%u obj=%u type=%#x name=%s prop_id=%u value=%llu hex=%#llx\n",
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING PROP seq=%u index=%u obj=%u type=%#x name=%s prop_id=%u value=%llu hex=%#llx\n",
 				seq,i,p->obj_id,p->obj_type,p->name,p->prop_id,
 				(unsigned long long)p->value,
 				(unsigned long long)p->value);
 		}
 	}
-	pr_info("P447 FLICKER_RING DUMP_END trigger=%u requests=%u dropped=%u once=1 status=%s\n",
+	a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING DUMP_END trigger=%u requests=%u dropped=%u once=1 status=%s\n",
 		trigger,printed,dropped,dropped?"TRUNCATED":"COMPLETE");
 }
 static int __init a52f_init(void)
 {
-	pr_info("P447 FLICKER_RING ARMED enabled=%d default_on=1 trigger=first_plane_CRTC_ID_0 pre=40 post=20 one_shot=1 dump=dmesg\n",
+	a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P447 FLICKER_RING ARMED enabled=%d default_on=1 trigger=first_plane_CRTC_ID_0 pre=40 post=20 one_shot=1 dump=dmesg\n",
 		a52f_enabled);
 	return 0;
 }
@@ -1858,7 +1858,7 @@ int drm_mode_atomic_ioctl(struct drm_device *dev,
 		static atomic_t captured = ATOMIC_INIT(0);
 		int seq = atomic_inc_return(&captured);
 		if (seq <= 350)
-			pr_info("P446S IOCTL seq=%d t_ns=%llu pid=%d comm=%s flags=%#x count_objs=%u TEST_ONLY=%u ALLOW_MODESET=%u NONBLOCK=%u\n",
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446S IOCTL seq=%d t_ns=%llu pid=%d comm=%s flags=%#x count_objs=%u TEST_ONLY=%u ALLOW_MODESET=%u NONBLOCK=%u\n",
 				seq,(unsigned long long)ktime_get_boottime_ns(),
 				task_pid_nr(current),current->comm,
 				arg->flags,arg->count_objs,
@@ -1907,10 +1907,10 @@ if (ktime_get_boottime_ns() >= 85ULL * 1000000000ULL) {
 		}
 		if (a52u_req > 0 && a52u_req <= 400) {
 			if (a52u_req == 301)
-				pr_info("P446V POST_WINDOW_BEGIN ts=%llu count=100 trigger=NORMAL_DISPLAY_ON\n",
+				a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446V POST_WINDOW_BEGIN ts=%llu count=100 trigger=NORMAL_DISPLAY_ON\n",
 					(unsigned long long)ktime_get_boottime_ns());
 			a52u_req_set(a52u_req);
-			pr_info("P446U REQUEST seq=%d pid=%d comm=%s ts=%llu objs=%u flags=%#x\n",
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446U REQUEST seq=%d pid=%d comm=%s ts=%llu objs=%u flags=%#x\n",
 				a52u_req, task_pid_nr(current), current->comm,
 				(unsigned long long)ktime_get_boottime_ns(),
 				arg->count_objs, arg->flags);
@@ -1924,7 +1924,7 @@ retry:
 		a52ac_ring_start(a52aa_seq,arg);
 			a52f_seq=a52f_begin(arg);
 		if (a52aa_seq<=192)
-			pr_info("P446AA DRM_IOCTL seq=%u pid=%d comm=%s flags=%#x objects=%u\n",
+			a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AA DRM_IOCTL seq=%u pid=%d comm=%s flags=%#x objects=%u\n",
 				a52aa_seq,task_pid_nr(current),current->comm,arg->flags,arg->count_objs);
 	}
 	a52f_retry(a52f_seq);
@@ -1990,7 +1990,7 @@ retry:
 			}
 
 			if (a52u_req && a52u_req > 0 && a52u_req <= 400)
-				if (a52_447c_trace_verbose()) pr_info("P446U PROP seq=%d pid=%d obj=%u type=%#x prop=%s val=%llu hex=%#llx\n",
+				if (a52_447c_trace_verbose()) a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446U PROP seq=%d pid=%d obj=%u type=%#x prop=%s val=%llu hex=%#llx\n",
 					a52u_req, task_pid_nr(current), obj_id, obj->type,
 					prop->name, (unsigned long long)prop_value,
 					(unsigned long long)prop_value);
@@ -1999,7 +1999,7 @@ retry:
 				obj->type==DRM_MODE_OBJECT_PLANE &&
 				(!strcmp(prop->name,"FB_ID") ||
 				 !strcmp(prop->name,"CRTC_ID")))
-				pr_info("P446AA DRM_INPUT seq=%u plane=%u prop=%s val=%llu\n",
+				a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446AA DRM_INPUT seq=%u plane=%u prop=%s val=%llu\n",
 					a52aa_seq,obj->id,prop->name,
 					(unsigned long long)prop_value);
 			a52ac_ring_prop(a52aa_seq,obj,prop,prop_value);

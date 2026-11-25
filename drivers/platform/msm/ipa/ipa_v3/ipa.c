@@ -4,6 +4,7 @@
  * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/a52_phase447.h>
 #include <linux/clk.h>
 #include <linux/compat.h>
 #include <linux/device.h>
@@ -374,7 +375,7 @@ static int p470_a6_vote(unsigned int state)
         return -ENODEV;
     }
     rc = msm_bus_scale_client_update_request(p470_a6_bus_handle, state);
-    pr_info_ratelimited("P470 IPA BUS vote case=%d rc=%d\n", (int)state, rc);
+    a52_diag_log_if(rc != 0, pr_info_ratelimited, "P470 IPA BUS vote case=%d rc=%d\n", (int)state, rc);
     if (rc) {
         atomic_set(&p470_a6_vote_failed, 1);
         pr_err_ratelimited("P470 IPA BUS VOTE_FAILED case=%d rc=%d\n",

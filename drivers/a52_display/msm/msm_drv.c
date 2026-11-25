@@ -417,7 +417,7 @@ int msm_atomic_check(struct drm_device *dev,
 		int i;
 		for_each_new_plane_in_state(state, p, new_state, i) {
 			if (p->base.id == 91)
-				if (a52_447c_trace_verbose()) pr_info("P446U MSM_CHECK seq=%d plane=91 rc=%d new_fb=%u new_crtc=%u visible=%u\n",
+				if (a52_447c_trace_verbose()) a52_diag_log_if(a52_447c_trace_verbose(), pr_info, "P446U MSM_CHECK seq=%d plane=91 rc=%d new_fb=%u new_crtc=%u visible=%u\n",
 					a52_446u_request_id(), rc,
 					new_state->fb ? new_state->fb->base.id : 0,
 					new_state->crtc ? new_state->crtc->base.id : 0,
@@ -1563,7 +1563,7 @@ int a52k_msm_crtc_enable_vblank(struct drm_crtc *crtc)
 		return -EINVAL;
 
 	rc = msm_enable_vblank(crtc->dev, drm_crtc_index(crtc));
-	pr_info_ratelimited("P447K VBLANK enable pipe=%u crtc=%u rc=%d\n",
+	a52_diag_log_if(rc != 0, pr_info_ratelimited, "P447K VBLANK enable pipe=%u crtc=%u rc=%d\n",
 			    drm_crtc_index(crtc), crtc->base.id, rc);
 	return rc;
 }
@@ -1573,7 +1573,7 @@ void a52k_msm_crtc_disable_vblank(struct drm_crtc *crtc)
 	if (!crtc || !crtc->dev)
 		return;
 
-	pr_info_ratelimited("P447K VBLANK disable pipe=%u crtc=%u\n",
+	a52_diag_log_if(false, pr_info_ratelimited, "P447K VBLANK disable pipe=%u crtc=%u\n",
 			    drm_crtc_index(crtc), crtc->base.id);
 	msm_disable_vblank(crtc->dev, drm_crtc_index(crtc));
 }

@@ -41,5 +41,11 @@ enum a52_447_subsys {
 };
 bool a52_447_enabled(enum a52_447_subsys id);
 bool a52_447c_trace_verbose(void);
+bool a52_diag_enabled(void);
+/* Only for diagnostic printk calls, never for hardware/state operations. */
+#define a52_diag_log_if(keep, log, ...) do { \
+	if ((keep) || a52_diag_enabled()) \
+		log(__VA_ARGS__); \
+} while (0)
 int a52_447_probe_allowed(struct device *dev, enum a52_447_subsys id);
 #endif
