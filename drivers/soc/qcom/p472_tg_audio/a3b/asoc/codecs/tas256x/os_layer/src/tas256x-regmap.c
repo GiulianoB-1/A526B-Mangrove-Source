@@ -55,8 +55,8 @@ static dc_detection_data_t s_dc_detect;
 /*For mixer_control implementation*/
 #define MAX_STRING	200
 
-/* Link-review stage: default off pending DT and probe lifetime audit. */
-static bool p487_tas_enabled;
+/* Review 6: real I2C-only probe, never expose playback in this image. */
+static bool p487_tas_enabled = true;
 static int __init p487_tas_setup(char *v)
 {
 	return !v || kstrtobool(v, &p487_tas_enabled) ? -EINVAL : 0;
@@ -1311,12 +1311,39 @@ static int tas256x_parse_dt(struct device *dev,
 			p_tas256x->mn_vbat);
 		p_tas256x->curr_mn_vbat = p_tas256x->mn_vbat;
 	}
-#if IS_ENABLED(CONFIG_TAS25XX_ALGO)
-	/* Needs to be enabled always */
-	tas25xx_parse_algo_dt(np);
-#endif /*CONFIG_TAS25XX_ALGO*/
+	/* Probe-only image: no algorithm initialization or EFS access. */
 EXIT:
 	return rc;
+}
+
+/* Real bus readback, independently for each channel. No DSP or stream. */
+static int p487_probe_shutdown(struct tas256x_priv *tas)
+{
+	struct linux_platform *plat = tas->platform_data;
+	int i, rc, result = 0;
+	unsigned int reg;
+
+	for (i = 0; i < tas->mn_channels; i++) {
+		enum channel ch = i ? channel_right : channel_left;
+		rc = tas256x_set_power_shutdown(tas, ch);
+		if (!rc)
+			rc = tas256x_iv_sense_enable_set(tas, 0, ch);
+		reg = 0;
+		if (!rc)
+			rc = tas->read(tas, ch, TAS256X_POWERCONTROL, &reg);
+		if (!rc && (reg & TAS256X_POWERCONTROL_OPERATIONALMODE10_MASK) !=
+		    TAS256X_POWERCONTROL_OPERATIONALMODE10_SHUTDOWN)
+			rc = -EIO;
+		dev_info(plat->dev, "P487 TAS PROBE_POWER addr=0x%02x chip=0x%02x reg=0x%02x rc=%d\n",
+			tas->devs[i]->mn_addr, tas->devs[i]->mn_chip_id, reg, rc);
+		if (rc && !result)
+			result = rc;
+	}
+	if (!result) {
+		tas->mb_power_up = false;
+		tas->mn_power_state = TAS256X_POWER_SHUTDOWN;
+	}
+	return result;
 }
 
 static int tas256x_i2c_probe(struct i2c_client *p_client,
@@ -1327,6 +1354,7 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	int n_result = 0;
 	int i = 0;
 	struct i2c_client *left;
+	bool reset_owned = false;
 
 	if (!p487_tas_enabled) {
 		dev_info(&p_client->dev, "P487 TAS PROBE_GATED rc=%d\n", -ENODEV);
@@ -1416,14 +1444,21 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 					"%s: Failed to request gpio %d\n",
 					__func__,
 					p_tas256x->devs[i]->mn_reset_gpio);
-				n_result = -EINVAL;
 				goto err;
 			}
+			if (i == 0)
+				reset_owned = true;
+			n_result = gpio_direction_output(p_tas256x->devs[i]->mn_reset_gpio, 0);
+			if (n_result)
+				goto err;
 		}
 	}
 
 	n_result = tas256x_register_device(p_tas256x);
 	if (n_result < 0)
+		goto err;
+	n_result = p487_probe_shutdown(p_tas256x);
+	if (n_result)
 		goto err;
 
 	for (i = 0; i < p_tas256x->mn_channels; i++) {
@@ -1487,24 +1522,11 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 		}
 	}
 
-#if IS_ENABLED(CONFIG_TAS256X_CODEC)
-	n_result = tas256x_register_codec(p_tas256x);
-	if (n_result < 0) {
-		dev_err(plat_data->dev,
-			"register codec failed, %d\n", n_result);
-		goto err;
-	}
-#endif
-
-/* Review 5 probe-only: raw misc access not exposed until lifetime/ABI review. */
+	/* No ASoC component, misc, DC callback or enabled IRQ in this diagnostic.
+	 * QUIN stays filtered; a real I2C bind is the only purpose of this image. */
 	dev_info(&p_client->dev, "P487 TAS MISC_GATED reason=PROBE_REVIEW\n");
-#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
-	g_p_tas256x = p_tas256x;
-	register_tas256x_reset_func(tas256x_software_reset, &s_dc_detect);
-#endif
 	WRITE_ONCE(plat_data->probe_ready, true);
-	tas256x_enable_irq(p_tas256x, true);
-	dev_info(&p_client->dev, "P487 TAS PROBE_READY channels=2 left=0x4d right=0x4c\n");
+	dev_info(&p_client->dev, "P487 TAS PROBE_READY channels=2 left=0x4d right=0x4c shutdown=1\n");
 	return 0;
 
 err:
@@ -1523,6 +1545,10 @@ err:
 		cancel_delayed_work_sync(&p_tas256x->dc_work);
 #endif
 	}
+	if (reset_owned) {
+		int reset_rc = gpio_direction_output(p_tas256x->devs[0]->mn_reset_gpio, 0);
+		dev_err(&p_client->dev, "P487 TAS PROBE_FAIL rc=%d reset_assert_rc=%d\n", n_result, reset_rc);
+	}
 	return n_result;
 }
 
@@ -1535,10 +1561,6 @@ static int tas256x_i2c_remove(struct i2c_client *p_client)
 	mutex_lock(&plat->irq_lock);
 	WRITE_ONCE(plat->stopping, true);
 	mutex_unlock(&plat->irq_lock);
-#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
-	register_tas256x_reset_func(NULL, NULL);
-	g_p_tas256x = NULL;
-#endif
 	for (i = 0; i < p_tas256x->mn_channels; i++)
 		if (plat->irq_requested[i])
 			free_irq(p_tas256x->devs[i]->mn_irq, p_tas256x);
@@ -1547,10 +1569,8 @@ static int tas256x_i2c_remove(struct i2c_client *p_client)
 #if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
 	cancel_delayed_work_sync(&p_tas256x->dc_work);
 #endif
-#if IS_ENABLED(CONFIG_TAS256X_CODEC)
-	tas256x_deregister_codec(p_tas256x);
-#endif
-	return 0;
+	/* Hold the shared reset on unbind; no component was published. */
+	return gpio_direction_output(p_tas256x->devs[0]->mn_reset_gpio, 0);
 }
 
 
