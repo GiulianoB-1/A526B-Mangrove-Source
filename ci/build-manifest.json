@@ -1,7 +1,7 @@
 {
   "ancestry_strict_only": true,
   "flash_authorized": false,
-  "kernel_config_sha256": "6603d495a9767a65bea74b45e77ef2aba43d4a70e854c678e602fe1474a46e43",
+  "kernel_config_sha256": "f45cb4d4ec5e1a50014808d232803144ce4bf79c68f50178a3742fd41fab6b53",
   "missing_required": [],
   "p480_source_materialized": true,
   "parent_baseline_commit": "55babd9c651375580b3c5c10d7f37ac6213e005c",

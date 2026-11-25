@@ -520,7 +520,7 @@ jobs:
           mkdir -p out_A3C package/A3C package/input package/archive package/audit
           cp ci/build.config out_A3C/.config
           make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
-          cmp ci/build.config out_A3C/.config
+          diff -u ci/build.config out_A3C/.config
           make O="$PWD/out_A3C" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
           grep -aFq 'P481 INIT_ORDER_PASS A2a=1 A3a=1 platform=1 machine=0' out_A3C/arch/arm64/boot/Image
           grep -aFq 'P480 A3c PLATFORM_SKIPPED reason=a2a_not_ready' out_A3C/arch/arm64/boot/Image
