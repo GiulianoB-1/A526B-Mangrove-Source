@@ -1,0 +1,48 @@
+{
+  "repository": "micr0softstore/samsung_android_kernel_a52xq",
+  "ref": "6bf351bd",
+  "source": "techpack/audio/asoc/codecs/tas256x/",
+  "files": [
+    {
+      "path": "logical_layer/inc/tas256x-logic.h",
+      "blob": "b0142f418204941b84c6c0fb78e98ebab74b9bf8"
+    },
+    {
+      "path": "logical_layer/src/tas256x-logic.c",
+      "blob": "0e8edbbdeef3b0b1f68e2559197ef2fe1c005f24"
+    },
+    {
+      "path": "misc/tas256x-misc.c",
+      "blob": "7d491bd0f9d2c4aa083725b672910b175a7a5395"
+    },
+    {
+      "path": "misc/tas256x-misc.h",
+      "blob": "03a29680efd890540f6d00f4020d5c82d9e957c0"
+    },
+    {
+      "path": "algo/inc/tas25xx-calib.h",
+      "blob": "1a264a3af29e5ca85972747b1d5191b59e5f9a02"
+    },
+    {
+      "path": "algo/inc/tas_smart_amp_v2.h",
+      "blob": "cf4a2d02730e6a6efa9c6553bb50b87de76f613f"
+    },
+    {
+      "path": "algo/platform/qcom/tas25xx-algo-qdsp-intf.c",
+      "blob": "97f743dabe2b8ad253a74321d71e986cdb95a620"
+    },
+    {
+      "path": "algo/src/tas25xx-algo-common.c",
+      "blob": "8e5161baf00ae347bdf3196de2dc9601bb7428c2"
+    },
+    {
+      "path": "algo/src/tas25xx-algo-intf.c",
+      "blob": "39d8e890a66a1d3b5f12db2ed5c7ccec12511f19"
+    },
+    {
+      "path": "algo/src/tas25xx-algo-intf.h",
+      "blob": "81dd83ec4bf0b8abfe377f871d726fc03d87fb15"
+    }
+  ],
+  "enabled": false
+}
