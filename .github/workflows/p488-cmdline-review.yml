@@ -1,0 +1,45 @@
+name: P488 CMDLINE review (NO BOOT NO FLASH)
+on:
+  push:
+    branches: ['review/p488-cmdline-4096']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cmdline-review:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Capacity and reference inventory
+        run: |
+          set -Eeuo pipefail
+          mkdir -p review-output
+          python3 ci/p488_cmdline_audit.py > review-output/cmdline-audit.json
+          cp ci/P488-CMDLINE-REVIEW.md review-output/
+          git rev-parse HEAD > review-output/source-commit.txt
+      - name: Compile exact pinned config (no boot packaging)
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          mkdir -p out
+          cp ci/build.config out/.config
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          diff -u ci/build.config out/.config
+          make O="$PWD/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j"$(nproc)" Image vmlinux
+          cp out/.config review-output/final.config
+          cp out/System.map review-output/
+          llvm-nm -S out/vmlinux | grep -w boot_command_line > review-output/boot-command-line-symbol.txt
+          python3 -c 'import pathlib; s=pathlib.Path("review-output/boot-command-line-symbol.txt").read_text().split(); assert int(s[1],16)==4096, s'
+          sha256sum out/arch/arm64/boot/Image out/vmlinux > review-output/compiled-sha256.txt
+          echo 'Compilation evidence only; NO BOOT / NO FLASH' > review-output/README-DO-NOT-FLASH.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: P488-CMDLINE-REVIEW-${{ github.sha }}
+          path: review-output/
+          if-no-files-found: error
