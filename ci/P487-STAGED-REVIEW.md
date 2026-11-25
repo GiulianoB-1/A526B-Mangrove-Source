@@ -21,3 +21,16 @@ Autostart candidate now implemented using the exact P458 SCM runtime and P470 IP
 Storage: TG and current configs have QUOTA, QFMT_V2, QUOTACTL, FS_ENCRYPTION_INLINE_CRYPT, FUSE_FS enabled. TG QUOTA_NETLINK_INTERFACE=y vs current off; no evidence this causes FS_IOC_FSSETXATTR EACCES. No speculative config change. FUSE passthrough/project quota/casefold implementation and ROM paths need further audit.
 
 This is partial P487, not a final P487 candidate. Do not flash. Only a distinctly named STAGED build is requested for source review; no final P487 default/NOAUTO image pair yet.
+
+## R02 donor board mapping (source evidence, not live verification)
+
+Pinned TG overlay: arch/arm64/boot/dts/samsung/a52/a52xq/a52xq_eur_open_w00_r02.dts, blob 72de76f7bae4b29ccc8663013936c0667a954180. Fragments 122, 124-126, 128 and the overlay fixups establish the following:
+- /soc/i2c@18 is an i2c-gpio software adapter with alias i2c18 and cell-index 0x12, not a QUP controller. TLMM SDA/SCL offsets 52/53, donor delay property #i2c-gpio,delay-us=2.
+- tas256x@4c: compatible "ti, tas256x", left 0x4d, right 0x4c, channels=2, TLMM reset=55, IRQ=54, iv-width=8, vbat-mon=1, port_id=0x1016.
+- I2C pinctrl default references 0x7e (TLMM GPIO52-55, GPIO function, bias disabled) and 0x7f (FM LNA GPIO101, output-low, bias disabled). Do not alter FM LNA incidentally.
+- QUIN MI2S pinctrl references 0x81, msm_cdc_pinctrl_quin, compatible qcom,msm-cdc-pinctrl, qcom,lpi-gpios, aud_active/aud_sleep. LPI GPIO6 SCK, GPIO7 WS, GPIO8 SD0, GPIO9 SD1, func2. Active states drive-strength 4, bias disabled, output-high; sleep states drive-strength 2, pull-down, input-enable. Distinct from TLMM amplifier control pins.
+- Sound overlay sets qcom,mi2s-audio-intf=1 and qcom,quin-mi2s-gpios=<0x81>. The existing ci/P480-live-r02-merged-sound-evidence.json establishes the card model and routes but does not capture the amplifier bus/pinctrl. No new DT modification yet.
+- Stored calibration input names from algo/src/tas25xx-calib-validation.h: /efs/tas25xx/calib_re, amb_temp, calib_re_r, amb_temp_r. Kernel read/apply only; factory sysfs store and misc write/ioctl paths need explicit rejection; no donor code is enabled in this stage. Need port legacy set_fs to kernel_read, review every factory and raw register path, and prove smart-amp protections active before enabling QUIN.
+- Earpiece channel/route still requires exact ROM mixer_paths XML, not an assumption from left/right addresses.
+
+The native build for source commit 064302423ffbfbc425cb04c628fda077f9f18270 is run 45632533043; preflight passed at the time of inspection, compile underway. This documentation-only supplement does not change the built source or trigger another native build.
