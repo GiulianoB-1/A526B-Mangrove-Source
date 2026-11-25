@@ -22,6 +22,7 @@
 #include "algo/inc/tas_smart_amp_v2.h"
 #include "tas25xx-calib-validation.h"
 #include "tas25xx-algo-intf.h"
+#include "p487-re-parser.h"
 
 static uint8_t calibration_result[MAX_CHANNELS] = {STATUS_NONE};
 static uint8_t validation_result[MAX_CHANNELS] = {STATUS_NONE};
@@ -82,9 +83,6 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 	char fname[MAX_STRING] = {0};
 	loff_t pos = 0;
 	char calib_data[MAX_STRING] = {0};
-	uint32_t data_flt[2] = {0};
-	int parsed = 0;
-	u64 re_q19;
 	int ret = 0;
 
 
@@ -118,22 +116,7 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 				ret = -1;
 			}
 		} else {
-			/* TG stores decimal ohms with the fractional part in hundredths. */
-			ret = sscanf(calib_data, "%u.%u%n", &data_flt[0],
-				&data_flt[1], &parsed);
-			if (ret != 2 || !parsed ||
-			    *strim(calib_data + parsed) || data_flt[1] > 99) {
-				ret = -EINVAL;
-			} else {
-				re_q19 = ((u64)data_flt[0] << 19) +
-					 (((u64)data_flt[1] << 19) / 100);
-				if (!re_q19 || re_q19 > S32_MAX)
-					ret = -ERANGE;
-				else {
-					*data = (u32)re_q19;
-					ret = 0;
-				}
-			}
+			ret = p487_tas_parse_re(calib_data, ret, data);
 		}
 		filp_close(pf, NULL);
 	} else {

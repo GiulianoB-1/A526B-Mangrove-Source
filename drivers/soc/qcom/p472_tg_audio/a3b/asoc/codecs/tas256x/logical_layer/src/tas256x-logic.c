@@ -913,6 +913,8 @@ int tas256x_init_work_func(struct tas256x_priv *p_tas256x)
 
 	pr_info("%s:\n", __func__);
 
+	if (p_tas256x->p487_calib_failed)
+		return -EPERM;
 	/* Clear latched IRQ before power on */
 	n_result = tas256x_interrupt_clear(p_tas256x, channel_both);
 
@@ -1046,6 +1048,8 @@ int tas256x_set_power_state(struct tas256x_priv *p_tas256x,
 
 	pr_info("%s: state %d\n", __func__, state);
 
+	if (p_tas256x->p487_calib_failed && state == TAS256X_POWER_ACTIVE)
+		return -EPERM;
 	if ((p_tas256x->mb_mute) && (state == TAS256X_POWER_ACTIVE))
 		state = TAS256X_POWER_MUTE;
 

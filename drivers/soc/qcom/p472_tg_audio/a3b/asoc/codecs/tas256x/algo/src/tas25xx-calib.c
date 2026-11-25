@@ -47,82 +47,52 @@ struct tas_dsp_pkt {
 	u8 data[TAS_PAYLOAD_SIZE * 4];
 };
 
-static int smartamp_params_ctrl(uint8_t *input, u8 dir, u8 count)
+/* Bounded read-only diagnostic ABI: count includes four-byte header.
+ * No observed TG runtime client; never copy more than the supplied count.
+ */
+static int smartamp_params_get(char __user *input, size_t count)
 {
-	u32 length = count / 4;
-	u32 paramid = 0;
-	u32 index;
-	int ret = 0;
-	int special_index = 0;
-	struct tas_dsp_pkt *ppacket;
+	struct tas_dsp_pkt packet = {0};
+	u32 index, length, channel, paramid;
+	int ret;
 
-	if (length >= TAS_PAYLOAD_SIZE) {
-		pr_err("TI-SmartPA: %s: Unsupported length!", __func__);
+	if (count < 8 || count > sizeof(packet) || (count & 3))
 		return -EINVAL;
-	}
-
-	ppacket = kmalloc(sizeof(struct tas_dsp_pkt),
-							GFP_KERNEL);
-	if (!ppacket)
-		return -ENOMEM;
-
-	memset(ppacket, 0, sizeof(struct tas_dsp_pkt));
-	ret = copy_from_user(ppacket, input, sizeof(struct tas_dsp_pkt));
-	if (ret) {
-		pr_err("TI-SmartPA: %s: Error copying from user\n", __func__);
-		kfree(ppacket);
+	if (copy_from_user(&packet, input, 4))
 		return -EFAULT;
+	if (!packet.page || packet.offset < 8 ||
+	    packet.offset > 124 || (packet.offset & 3) || packet.book)
+		return -EINVAL;
+	index = (packet.page - 1) * 30 + (packet.offset - 8) / 4;
+	switch (index) {
+	case TAS_SA_GET_F0:
+	case TAS_SA_GET_Q:
+	case TAS_SA_GET_TV:
+	case TAS_SA_GET_RE:
+	case TAS_SA_GET_STATUS:
+	case TAS_SA_EXC_TEMP_STAT:
+	case TAS_SA_GET_VALID_STATUS:
+	case TAS_SA_GET_OP_MODE:
+	case TAS_SA_GET_RE_RANGE:
+		break;
+	default:
+		return -EPERM;
 	}
-
-	index = (ppacket->page - 1) * 30 + (ppacket->offset - 8) / 4;
-	special_index = TAS_SA_IS_SPL_IDX(index);
-	pr_info("TI-SmartPA: %s: index = %d", __func__, index);
-	if (special_index == 0) {
-		if ((index < 0 || index > MAX_DSP_PARAM_INDEX)) {
-			pr_err("TI-SmartPA: %s: invalid index !\n", __func__);
-			kfree(ppacket);
-			return -EINVAL;
-		}
-	}
-	pr_info("TI-SmartPA: %s: Valid Index. special = %s\n",
-		__func__, special_index ? "Yes" : "No");
-
-	/* speakers are differentiated by device ids */
-	if (ppacket->device_id == DEVICE1) {
-		paramid = TAS_CALC_PARAM_IDX(index, length, CHANNEL0);
-		pr_debug("TI-SmartPA: %s: Rcvd device id for channel 0, %x\n",
-			__func__, ppacket->device_id);
-	} else if (ppacket->device_id == DEVICE2) {
-		paramid = TAS_CALC_PARAM_IDX(index, length, CHANNEL1);
-		pr_debug("TI-SmartPA: %s: Rcvd device id for channel 1, %x\n",
-			__func__, ppacket->device_id);
-	} else {
-		pr_err("TI-SmartPA: %s: Wrong device id = %x\n",
-			__func__, ppacket->device_id);
-	}
-
-	ret = tas25xx_smartamp_algo_ctrl(ppacket->data, paramid,
-			dir, length * 4, 0/*Default to Rx*/);
-	if (ret)
-		pr_err("TI-SmartPA: %s: %s device id 0x%x params failed from afe, ret=%x\n",
-				__func__,
-				dir == TAS_GET_PARAM ? "get" : "set",
-				ppacket->device_id, ret);
+	if (packet.device_id == DEVICE1)
+		channel = CHANNEL0;
+	else if (packet.device_id == DEVICE2)
+		channel = CHANNEL1;
 	else
-		pr_info("TI-SmartPA: %s: Algo control returned %d\n",
-			__func__, ret);
-
-	if (dir == TAS_GET_PARAM) {
-		ret = copy_to_user(input, ppacket, sizeof(struct tas_dsp_pkt));
-		if (ret) {
-			pr_err("TI-SmartPA: %s: Error copying to user after DSP",
-				__func__);
-			ret = -EFAULT;
-		}
-	}
-
-	kfree(ppacket);
-	return ret;
+		return -EINVAL;
+	length = (count - 4) / 4;
+	paramid = TAS_CALC_PARAM_IDX(index, length, channel);
+	ret = tas25xx_smartamp_algo_ctrl(packet.data, paramid, TAS_GET_PARAM,
+					length * 4, TISA_MOD_RX);
+	if (ret)
+		return ret < 0 ? ret : -EIO;
+	if (copy_to_user(input, &packet, count))
+		return -EFAULT;
+	return 0;
 }
 
 static int tas_calib_open(struct inode *inode, struct file *fd)
@@ -133,7 +103,7 @@ static int tas_calib_open(struct inode *inode, struct file *fd)
 static ssize_t tas_calib_write(struct file *file,
 		const char __user *buffer, size_t count, loff_t *offp)
 {
-	/* Compile-only stage: factory DSP/raw register writes denied. */
+	/* P487 final policy: no TG runtime userspace SET writer. */
 	return -EPERM;
 }
 
@@ -142,15 +112,13 @@ static ssize_t tas_calib_read(struct file *file, char __user *buffer,
 {
 	int rc;
 
-	rc = smartamp_params_ctrl((uint8_t *)buffer, TAS_GET_PARAM, count);
-	if (rc < 0)
-		count = rc;
-	return count;
+	rc = smartamp_params_get(buffer, count);
+	return rc ? rc : count;
 }
 
 static long tas_calib_ioctl(struct file *filp, uint cmd, ulong arg)
 {
-	return 0;
+	return -EPERM;
 }
 
 static int tas_calib_release(struct inode *inode, struct file *fd)

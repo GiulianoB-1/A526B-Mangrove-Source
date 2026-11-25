@@ -49,6 +49,7 @@
 #if IS_ENABLED(CONFIG_TAS25XX_ALGO)
 #include "algo/inc/tas_smart_amp_v2.h"
 #include "algo/inc/tas25xx-calib.h"
+#include <linux/a52_tas_iv.h>
 #endif /*CONFIG_TAS25XX_ALGO*/
 
 #define TAS256X_MDELAY 0xFFFFFFFE
@@ -172,16 +173,21 @@ static int tas256x_dac_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		mutex_lock(&p_tas256x->codec_lock);
 		dev_info(plat_data->dev, "SND_SOC_DAPM_POST_PMU\n");
 		if (p_tas256x->mb_power_up == false)
 			tas256x_set_power_state(p_tas256x,
 				TAS256X_POWER_ACTIVE);
+		mutex_unlock(&p_tas256x->codec_lock);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
+		mutex_lock(&p_tas256x->codec_lock);
 		dev_info(plat_data->dev, "SND_SOC_DAPM_PRE_PMD\n");
 		if (p_tas256x->mb_power_up == true)
 			tas256x_set_power_state(p_tas256x,
 				TAS256X_POWER_SHUTDOWN);
+		p_tas256x->p487_calib_failed = false;
+		mutex_unlock(&p_tas256x->codec_lock);
 		break;
 	}
 
@@ -556,12 +562,17 @@ static int tas256x_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 			{
 			/* Keep the TG order; check each real result. */
 			u32 re[MAX_CHANNELS] = {0};
-			int rc;
+			int rc, shutdown_rc = 0, i;
+			bool iv_started;
 			unsigned int ch = p_tas256x->devs[0]->spk_control;
 
 			if (p_tas256x->mn_channels == 2)
 				ch |= p_tas256x->devs[1]->spk_control << 1;
 
+			iv_started = a52_tas_iv_port_started();
+			pr_info("P487 TAS IV_PORT 0x1017 started=%d at_unmute\n", iv_started);
+			if (!iv_started)
+				pr_err("P487 TAS IV_PORT missing acknowledged START; TG log-only\n");
 			rc = tas25xx_send_channel_mapping();
 			if (!rc)
 				rc = tas25xx_send_algo_calibration(re);
@@ -574,6 +585,24 @@ static int tas256x_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 				!rc, re[0], re[1], rc);
 			if (rc) {
 				tas25xx_algo_enable_common_controls(0);
+				/* 5.10 soc_pcm_prepare ignores digital_mute rc.
+				 * Shut each channel down explicitly; do not rely on
+				 * the ASoC caller unwinding DAPM.
+				 */
+				mutex_lock(&p_tas256x->codec_lock);
+				p_tas256x->p487_calib_failed = true;
+				cancel_delayed_work(&p_tas256x->init_work);
+				for (i = 0; i < p_tas256x->mn_channels; i++) {
+					int err = tas256x_set_power_shutdown(p_tas256x, i + 1);
+					if (err && !shutdown_rc)
+						shutdown_rc = err;
+				}
+				p_tas256x->mn_power_state = TAS256X_POWER_SHUTDOWN;
+				if (!shutdown_rc)
+					p_tas256x->mb_power_up = false;
+				mutex_unlock(&p_tas256x->codec_lock);
+				pr_err("P487 TAS CALIB_UNWIND shutdown_rc=%d rc=%d\n",
+					shutdown_rc, rc);
 				return rc < 0 ? rc : -EIO;
 			}
 			}

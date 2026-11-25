@@ -333,6 +333,13 @@ static atomic_t afe_ports_mad_type[SLIMBUS_PORT_LAST - SLIMBUS_0_RX];
 static unsigned long afe_configured_cmd;
 
 static struct afe_ctl this_afe;
+/* Set from real AFE BASIC_RSP_RESULT, cleared on service reset. */
+static atomic_t p487_iv_started = ATOMIC_INIT(0);
+bool a52_tas_iv_port_started(void)
+{
+	return atomic_read(&p487_iv_started) != 0;
+}
+EXPORT_SYMBOL_GPL(a52_tas_iv_port_started);
 static bool p482_afe_initialized;
 
 #define TIMEOUT_MS 1000
@@ -1028,6 +1035,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			__func__,
 			data->reset_event, data->reset_proc, this_afe.apr);
 
+		atomic_set(&p487_iv_started, 0);
 		cal_utils_clear_cal_block_q6maps(MAX_AFE_CAL_TYPES,
 			this_afe.cal_data);
 
@@ -1201,6 +1209,13 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 					atomic_set(&this_afe.status, payload[1]);
 				pr_err("%s: cmd = 0x%x returned error = 0x%x\n",
 					__func__, payload[0], payload[1]);
+			}
+			if (!payload[1] &&
+			    data->token == q6audio_get_port_index(AFE_PORT_ID_QUINARY_MI2S_TX)) {
+				if (payload[0] == AFE_PORT_CMD_DEVICE_START)
+					atomic_set(&p487_iv_started, 1);
+				else if (payload[0] == AFE_PORT_CMD_DEVICE_STOP)
+					atomic_set(&p487_iv_started, 0);
 			}
 			switch (payload[0]) {
 			case AFE_PORT_CMD_SET_PARAM_V2:
@@ -7745,6 +7760,9 @@ int afe_pseudo_port_stop_nowait(u16 port_id)
 	stop.hdr.token = index;
 
 	ret = afe_apr_send_pkt(&stop, NULL);
+	/* No ACK is waited for on this path; invalidate positive evidence. */
+	if (!ret && port_id == AFE_PORT_ID_QUINARY_MI2S_TX)
+		atomic_set(&p487_iv_started, 0);
 	if (ret)
 		pr_err("%s: AFE close failed %d\n", __func__, ret);
 

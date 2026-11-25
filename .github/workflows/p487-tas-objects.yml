@@ -38,5 +38,7 @@ jobs:
           # Keep compiling independent requested objects to report all compiler errors.
           # make -k still returns nonzero on any failure; no audit bypass.
           make "${args[@]}" -k -j"$(nproc)" "$dir/os_layer/src/tas256x-codec.o" "$dir/os_layer/src/tas256x-regmap.o" "$dir/physical_layer/src/tas256x.o" "$dir/logical_layer/src/tas256x-logic.o" "$dir/algo/src/tas25xx-algo-common.o" "$dir/algo/src/tas25xx-calib.o" "$dir/algo/src/tas25xx-algo-intf.o" "$dir/algo/platform/qcom/tas25xx-algo-qdsp-intf.o" "$dir/misc/tas256x-misc.o" "$dir/algo/src/tas25xx-calib-validation.o"
+          cc -std=c11 -Wall -Wextra -Werror -I"$dir/algo/src" ci/p487_tas_re_test.c -o out_TAS/p487_tas_re_test
+          out_TAS/p487_tas_re_test
           python3 ci/p487_tas_object_audit.py "out_TAS/$dir"
           test ! -e out_TAS/arch/arm64/boot/Image

@@ -618,6 +618,7 @@ struct tas_device {
 struct tas256x_priv {
 	void *platform_data;
 	bool mb_power_up;
+	bool p487_calib_failed;
 	int mn_power_state;
 	bool mb_irq_eable;
 	int mn_sampling_rate;
