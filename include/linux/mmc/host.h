@@ -284,6 +284,7 @@ struct mmc_ctx {
 };
 
 struct mmc_host {
+	bool a52_sd1_ro; /* immutable per-host SD1 diagnostic gate */
 	struct device		*parent;
 	struct device		class_dev;
 	int			index;

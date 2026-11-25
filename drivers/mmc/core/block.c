@@ -302,6 +302,10 @@ static ssize_t force_ro_store(struct device *dev, struct device_attribute *attr,
 		goto out;
 	}
 
+	if (md->queue.card->host->a52_sd1_ro && !set) {
+		ret = -EPERM;
+		goto out;
+	}
 	set_disk_ro(dev_to_disk(dev), set || md->read_only);
 	ret = count;
 out:
@@ -773,6 +777,19 @@ static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 {
 	struct mmc_blk_data *md;
 	int ret;
+
+	/* BLKROSET reaches driver ioctl before generic block fallback.
+	 * Raw MMC commands can bypass filesystem and block RO policy.
+	 */
+	md = mmc_blk_get(bdev->bd_disk);
+	if (!md)
+		return -ENODEV;
+	if (md->queue.card->host->a52_sd1_ro &&
+	    (cmd == BLKROSET || cmd == MMC_IOC_CMD || cmd == MMC_IOC_MULTI_CMD)) {
+		mmc_blk_put(md);
+		return -EPERM;
+	}
+	mmc_blk_put(md);
 
 	switch (cmd) {
 	case MMC_IOC_CMD:
@@ -2375,7 +2392,9 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 * Set the read-only status based on the supported commands
 	 * and the write protect switch.
 	 */
-	md->read_only = mmc_blk_readonly(card);
+	md->read_only = mmc_blk_readonly(card) || card->host->a52_sd1_ro;
+	if (card->host->a52_sd1_ro)
+		dev_info(mmc_dev(card->host), "A52 SDHC block ro=1 reason=sd1_diag\n");
 
 	md->disk = alloc_disk(perdev_minors);
 	if (md->disk == NULL) {

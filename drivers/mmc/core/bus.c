@@ -375,6 +375,9 @@ int mmc_add_card(struct mmc_card *card)
 
 #ifdef CONFIG_DEBUG_FS
 	mmc_add_card_debugfs(card);
+	if (card->host->a52_sd1_ro)
+		dev_info(mmc_dev(card->host), "A52 SDHC card detected type=%u timing=%u clock=%u\n",
+			card->type, card->host->ios.timing, card->host->ios.clock);
 #endif
 	card->dev.of_node = mmc_of_find_child_device(card->host, 0);
 

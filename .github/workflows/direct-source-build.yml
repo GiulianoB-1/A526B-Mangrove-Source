@@ -579,7 +579,27 @@ jobs:
           assert want in data and bad not in data, 'A3c vermagic must match original P479'
           print('A3C_ONLY exact P479 vermagic PASS, NO FLASH')
           PY
+      - name: SD1 native source proof only (NO BOOT)
+        if: ${{ contains(github.event.head_commit.message, '[SD1-LINK]') }}
+        run: |
+          set -Eeuo pipefail
+          grep -Fx CONFIG_MMC_SDHCI_MSM=y out_A3C/.config
+          grep -Fx CONFIG_MMC_CQHCI=y out_A3C/.config
+          for marker in 'A52 SDHC refuse sdhc1' 'A52 SDHC block ro=1 reason=sd1_diag' 'A52 SDHC ICE_DISABLED reason=SD_SLOT_NO_CQE'; do
+            grep -aFq "$marker" out_A3C/arch/arm64/boot/Image
+          done
+          cp ci/SD1-LINK-REVIEW.md package/A3C/
+          echo 'SD1 link review only; no DT merge proof, no boot image, no flash.' > package/A3C/README-DO-NOT-FLASH.txt
+      - name: Upload SD1 link proof only
+        if: ${{ success() && contains(github.event.head_commit.message, '[SD1-LINK]') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SD1-LINK-REVIEW-${{ github.sha }}
+          path: package/A3C/
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Authenticate the FINAL P479 boot and repack A3C only
+        if: ${{ !contains(github.event.head_commit.message, '[SD1-LINK]') }}
         run: |
           set -Eeuo pipefail
           gh release download p479-equivalence-reference --repo GiulianoB-1/A526B-Mangrove-Kernel --pattern p479-reference-14131467025.zip --dir package/archive
@@ -791,7 +811,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Upload ONLY fixed A3C image and init-order audit (NO FLASH)
-        if: ${{ always() && !contains(github.event.head_commit.message, '[P487-B2DIAG]') }}
+        if: ${{ always() && !contains(github.event.head_commit.message, '[P487-B2DIAG]') && !contains(github.event.head_commit.message, '[SD1-LINK]') }}
         uses: actions/upload-artifact@v4
         with:
           name: P487-STAGED-A3C-FINAL-P479-${{ github.sha }}

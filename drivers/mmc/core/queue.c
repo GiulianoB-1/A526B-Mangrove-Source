@@ -258,6 +258,8 @@ static blk_status_t mmc_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 	bool get_card, cqe_retune_ok;
 	int ret;
 
+	if (host->a52_sd1_ro && req_op(req) != REQ_OP_READ)
+		return BLK_STS_IOERR;
 	if (mmc_card_removed(mq->card)) {
 		req->rq_flags |= RQF_QUIET;
 		return BLK_STS_IOERR;

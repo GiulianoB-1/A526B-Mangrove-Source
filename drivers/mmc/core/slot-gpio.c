@@ -34,6 +34,8 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 	struct mmc_gpio *ctx = host->slot.handler_priv;
 	bool allow = true;
 
+	if (host->a52_sd1_ro)
+		dev_info(mmc_dev(host), "A52 SDHC cd irq state=%d\n", mmc_gpio_get_cd(host));
 	trace_android_vh_mmc_gpio_cd_irqt(host, &allow);
 	if (!allow)
 		return IRQ_HANDLED;
