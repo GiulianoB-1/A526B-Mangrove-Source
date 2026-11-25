@@ -55,6 +55,14 @@ static dc_detection_data_t s_dc_detect;
 /*For mixer_control implementation*/
 #define MAX_STRING	200
 
+/* Link-review stage: default off pending DT and probe lifetime audit. */
+static bool p487_tas_enabled;
+static int __init p487_tas_setup(char *v)
+{
+	return !v || kstrtobool(v, &p487_tas_enabled) ? -EINVAL : 0;
+}
+early_param("a52_audio.tas", p487_tas_setup);
+
 static const char *dts_tag[][3] = {
 	{
 		"ti,left-channel",
@@ -1016,10 +1024,10 @@ static void irq_work_routine(struct work_struct *work)
 	/*Logical Layer IRQ function, return is ignored*/
 	tas256x_irq_work_func(p_tas256x);
 
+end:
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_unlock(&p_tas256x->codec_lock);
 #endif
-end:
 	return;
 }
 
@@ -1172,12 +1180,16 @@ static int tas256x_parse_dt(struct device *dev,
 			p_tas256x->mn_channels);
 	}
 
+	if (p_tas256x->mn_channels != 2)
+		return -EINVAL;
 	/*the device structures array*/
 	p_tas256x->devs =
-		kmalloc(p_tas256x->mn_channels * sizeof(struct tas_device *),
+		devm_kcalloc(dev, p_tas256x->mn_channels, sizeof(struct tas_device *),
 			GFP_KERNEL);
+	if (!p_tas256x->devs)
+		return -ENOMEM;
 	for (i = 0; i < p_tas256x->mn_channels; i++) {
-		p_tas256x->devs[i] = kmalloc(sizeof(struct tas_device),
+		p_tas256x->devs[i] = devm_kzalloc(dev, sizeof(struct tas_device),
 					GFP_KERNEL);
 		if (p_tas256x->devs[i] == NULL) {
 			rc = -1;
@@ -1220,6 +1232,11 @@ static int tas256x_parse_dt(struct device *dev,
 				dts_tag[i][2],
 				p_tas256x->devs[i]->mn_irq_gpio);
 		}
+		if (p_tas256x->devs[i]->mn_reset_gpio == -EPROBE_DEFER ||
+		    p_tas256x->devs[i]->mn_irq_gpio == -EPROBE_DEFER)
+			return -EPROBE_DEFER;
+		if (p_tas256x->devs[i]->mn_addr != (i ? 0x4c : 0x4d))
+			return -EINVAL;
 		p_tas256x->devs[i]->spk_control = 1;
 	}
 
@@ -1319,6 +1336,10 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	int n_result = 0;
 	int i = 0;
 
+	if (!p487_tas_enabled) {
+		dev_info(&p_client->dev, "P487 TAS PROBE_GATED rc=%d\n", -ENODEV);
+		return -ENODEV;
+	}
 	dev_info(&p_client->dev, "Driver Tag: %s\n", TAS256X_DRIVER_TAG);
 	dev_info(&p_client->dev, "%s enter\n", __func__);
 
@@ -1331,7 +1352,7 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 
 	plat_data = devm_kzalloc(&p_client->dev,
 		sizeof(struct linux_platform), GFP_KERNEL);
-	if (p_tas256x == NULL) {
+	if (plat_data == NULL) {
 		n_result = -ENOMEM;
 		goto err;
 	}
@@ -1370,8 +1391,11 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	plat_data->mn_power_state = TAS256X_POWER_SHUTDOWN;
 #endif
 
-	if (p_client->dev.of_node)
-		tas256x_parse_dt(&p_client->dev, p_tas256x);
+	if (!p_client->dev.of_node)
+		return -EINVAL;
+	n_result = tas256x_parse_dt(&p_client->dev, p_tas256x);
+	if (n_result)
+		goto err;
 
 	for (i = 0; i < p_tas256x->mn_channels; i++) {
 		if (gpio_is_valid(p_tas256x->devs[i]->mn_reset_gpio)) {
@@ -1517,10 +1541,8 @@ static int tas256x_i2c_remove(struct i2c_client *p_client)
 			gpio_free(p_tas256x->devs[i]->mn_reset_gpio);
 		if (gpio_is_valid(p_tas256x->devs[i]->mn_irq_gpio))
 			gpio_free(p_tas256x->devs[i]->mn_irq_gpio);
-		kfree(p_tas256x->devs[i]);
 	}
 
-	kfree(p_tas256x->devs);
 
 	return 0;
 }
@@ -1534,6 +1556,7 @@ MODULE_DEVICE_TABLE(i2c, tas256x_i2c_id);
 
 #if defined(CONFIG_OF)
 static const struct of_device_id tas256x_of_match[] = {
+	{ .compatible = "ti,tas256x" },
 	{ .compatible = "ti, tas256x" },
 	{ .compatible = "ti, tas2562" },
 	{ .compatible = "ti, tas2564" },

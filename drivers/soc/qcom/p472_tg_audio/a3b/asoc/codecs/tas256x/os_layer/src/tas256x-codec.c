@@ -1321,11 +1321,12 @@ static int tas256x_codec_probe(struct snd_soc_component *codec)
 					p_tas256x, codec, i+1);
 	}
 
-	/* Generic Probe */
+	/* Generic Probe: propagate real failure. */
+	if (ret)
+		return ret;
 	ret = tas256x_probe(p_tas256x);
-	dev_dbg(plat_data->dev, "%s\n", __func__);
-
-	return 0;
+	dev_info(plat_data->dev, "P487 TAS COMPONENT_PROBE rc=%d\n", ret);
+	return ret;
 }
 
 static void tas256x_codec_remove(struct snd_soc_component *codec)

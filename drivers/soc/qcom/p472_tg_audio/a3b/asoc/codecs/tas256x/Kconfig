@@ -1,11 +1,10 @@
 # Exact TG symbol spelling used by q6afe and msm_dailink.h.
 config SND_SOC_TAS256x
-    bool "P487 TG TAS256x compile-only (NO hardware enable)"
-    depends on P480_A3C && COMPILE_TEST && I2C
+    bool "P487 TG TAS256x native built-in"
+    depends on P480_A3C && I2C
     default n
     help
-      Compile native driver objects for review only. No parent link or
-      runtime registration is authorized in this stage.
+      Build real TG codec and SmartPA objects; runtime gated for review.
 
 if SND_SOC_TAS256x
 config TAS256X_REGMAP
