@@ -12,6 +12,9 @@
  */
 
 #include <linux/notifier.h>
+#include <linux/a52_phase447.h>
+#include <linux/ratelimit.h>
+#include <linux/err.h>
 #include <linux/init.h>
 #include <linux/debugfs.h>
 #include <linux/module.h>
@@ -71,7 +74,11 @@ void *subsys_notif_register_notifier(
 			const char *subsys_name, struct notifier_block *nb)
 {
 	int ret;
-	struct subsys_notif_info *subsys = _notif_find_subsys(subsys_name);
+	struct subsys_notif_info *subsys;
+
+	if (!subsys_name || !nb || !nb->notifier_call)
+		return ERR_PTR(-EINVAL);
+	subsys = _notif_find_subsys(subsys_name);
 
 	if (!subsys) {
 
@@ -79,12 +86,20 @@ void *subsys_notif_register_notifier(
 		subsys = (struct subsys_notif_info *)
 				subsys_notif_add_subsys(subsys_name);
 
-		if (!subsys)
-			return ERR_PTR(-EINVAL);
+		if (IS_ERR_OR_NULL(subsys)) {
+			ret = IS_ERR(subsys) ? PTR_ERR(subsys) : -EINVAL;
+			pr_info("P487 NOTIF reg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+				subsys_name, subsys, nb->notifier_call, ret,
+				__builtin_return_address(0));
+			return ERR_PTR(ret);
+		}
 	}
 
 	ret = srcu_notifier_chain_register(
 		&subsys->subsys_notif_rcvr_list, nb);
+	pr_info("P487 NOTIF reg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+		subsys_name, subsys, nb->notifier_call, ret,
+		__builtin_return_address(0));
 
 	if (ret < 0)
 		return ERR_PTR(ret);
@@ -100,11 +115,14 @@ int subsys_notif_unregister_notifier(void *subsys_handle,
 	struct subsys_notif_info *subsys =
 			(struct subsys_notif_info *)subsys_handle;
 
-	if (!subsys)
+	if (IS_ERR_OR_NULL(subsys) || !nb)
 		return -EINVAL;
 
 	ret = srcu_notifier_chain_unregister(
 		&subsys->subsys_notif_rcvr_list, nb);
+	pr_info("P487 NOTIF unreg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+		subsys->name, subsys, nb->notifier_call, ret,
+		__builtin_return_address(0));
 
 	return ret;
 }
@@ -261,15 +279,48 @@ int subsys_notif_queue_notification(void *subsys_handle,
 					void *data)
 {
 	struct subsys_notif_info *subsys = subsys_handle;
+	struct srcu_notifier_head *head;
+	struct notifier_block *nb;
+	static DEFINE_RATELIMIT_STATE(p487_notif_rs, 5 * HZ, 40);
+	char rcvrs[512] = {0};
+	int idx, n_rcvr = 0, used = 0, rc;
+	bool trace, truncated = false;
 
-	if (!subsys)
+	if (IS_ERR_OR_NULL(subsys))
 		return -EINVAL;
 
 	if (notif_type < 0 || notif_type >= SUBSYS_NOTIF_TYPE_COUNT)
 		return -EINVAL;
 
-	return srcu_notifier_call_chain(&subsys->subsys_notif_rcvr_list,
-				       notif_type, data);
+	head = &subsys->subsys_notif_rcvr_list;
+	trace = a52_diag_enabled() && __ratelimit(&p487_notif_rs);
+	if (trace) {
+		/* Snapshot under SRCU, not a claim of actual delivery.
+		 * Bound traversal/output even if the chain is corrupted.
+		 */
+		idx = srcu_read_lock(&head->srcu);
+		for (nb = srcu_dereference(head->head, &head->srcu);
+		     nb && n_rcvr < 128;
+		     nb = srcu_dereference(nb->next, &head->srcu)) {
+			n_rcvr++;
+			if (used < sizeof(rcvrs) - 64)
+				used += scnprintf(rcvrs + used, sizeof(rcvrs) - used,
+					"%s%ps", used ? "," : "", nb->notifier_call);
+			else
+				truncated = true;
+		}
+		truncated |= !!nb;
+		srcu_read_unlock(&head->srcu, idx);
+		pr_info("P487 NOTIF begin name=%s handle=%px event=%d n_rcvr=%d rcvrs=%s truncated=%d caller=%pS\n",
+			subsys->name, subsys, notif_type, n_rcvr,
+			rcvrs, truncated, __builtin_return_address(0));
+	}
+	rc = srcu_notifier_call_chain(head, notif_type, data);
+	if (trace)
+		pr_info("P487 NOTIF call name=%s handle=%px event=%d n_rcvr=%d rcvrs=%s rc=%d truncated=%d caller=%pS\n",
+			subsys->name, subsys, notif_type, n_rcvr, rcvrs, rc,
+			truncated, __builtin_return_address(0));
+	return rc;
 }
 EXPORT_SYMBOL(subsys_notif_queue_notification);
 
