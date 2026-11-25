@@ -5,6 +5,7 @@
 
 #include <linux/p481_audio_diag.h>
 #include <linux/module.h>
+#include <linux/atomic.h>
 #include <linux/p484_audio.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
@@ -202,11 +203,41 @@ static int wcd938x_get_clk_rate(int mode)
 	return rate;
 }
 
+/* P486: log actual TX calls and return codes, not assumed hardware success. */
+static atomic_t p486_tx_step = ATOMIC_INIT(0);
+
+static int p486_tx_update_bits(struct snd_soc_component *component,
+			      unsigned int reg, unsigned int mask,
+			      unsigned int val, const char *caller)
+{
+	int step = atomic_inc_return(&p486_tx_step);
+	int rc = snd_soc_component_update_bits(component, reg, mask, val);
+
+	dev_info(component->dev,
+		 "P486 TX_SEQ step=%d op=reg_write reg=0x%x val=0x%x mask=0x%x rc=%d caller=%s\n",
+		 step, reg, val, mask, rc, caller);
+	return rc;
+}
+#define P486_TX_BITS(c, r, m, v) p486_tx_update_bits(c, r, m, v, __func__)
+
+static int p486_tx_datapath(struct snd_soc_component *component,
+			   struct swr_device *swr, bool enable)
+{
+	int step = atomic_inc_return(&p486_tx_step);
+	int rc = swr_slvdev_datapath_control(swr, swr->dev_num, enable);
+
+	dev_info(component->dev,
+		 "P486 TX_SEQ step=%d op=datapath enable=%u dev=%u rc=%d\n",
+		 step, enable, swr->dev_num, rc);
+	return rc;
+}
+
 static int wcd938x_set_swr_clk_rate(struct snd_soc_component *component,
 					int rate, int bank)
 {
 	u8 mask = (bank ? 0xF0 : 0x0F);
 	u8 val = 0;
+	int step, rc;
 
 	switch (rate) {
 	case SWR_CLK_RATE_0P6MHZ:
@@ -226,9 +257,12 @@ static int wcd938x_set_swr_clk_rate(struct snd_soc_component *component,
 		val = 0x00;
 		break;
 	}
-	snd_soc_component_update_bits(component,
-				      WCD938X_DIGITAL_SWR_TX_CLK_RATE,
-				      mask, val);
+	step = atomic_inc_return(&p486_tx_step);
+	rc = snd_soc_component_update_bits(component,
+				      WCD938X_DIGITAL_SWR_TX_CLK_RATE, mask, val);
+	dev_info(component->dev,
+		 "P486 TX_SEQ step=%d op=clk_rate reg=0x%x val=0x%x mask=0x%x rate=%d bank=%d rc=%d\n",
+		 step, WCD938X_DIGITAL_SWR_TX_CLK_RATE, val, mask, rate, bank, rc);
 
 	return 0;
 }
@@ -436,6 +470,7 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 	int slave_ch_idx;
 	u8 num_port = 1;
 	int ret = 0;
+	int step;
 
 	ret = wcd938x_set_port_params(component, slv_port_type, &port_id,
 				&num_ch, &ch_mask, &ch_rate,
@@ -464,6 +499,7 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 	dev_dbg(component->dev, "%s slv_ch_idx: %d, mstr_ch_type: %d\n",
 		__func__, slave_ch_idx, ch_type);
 
+	step = atomic_inc_return(&p486_tx_step);
 	if (enable)
 		ret = swr_connect_port(wcd938x->tx_swr_dev, &port_id,
 					num_port, &ch_mask, &ch_rate,
@@ -471,6 +507,9 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 	else
 		ret = swr_disconnect_port(wcd938x->tx_swr_dev, &port_id,
 					num_port, &ch_mask, &ch_type);
+	dev_info(component->dev,
+		 "P486 TX_SEQ step=%d op=connect_port enable=%u slv=%u port=%u rate=%u master=%u rc=%d\n",
+		 step, enable, slv_port_type, port_id, ch_rate, ch_type, ret);
 	return ret;
 
 }
@@ -1427,36 +1466,36 @@ static int wcd938x_codec_enable_dmic(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_AMIC_CTL,
 				(0x01 << dmic_ctl_shift), 0x00);
 		/* 250us sleep as per HW requirement */
 		usleep_range(250, 260);
 		if (dmic2_left_en)
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				dmic2_left_en, 0x80, 0x80);
 		/* Setting DMIC clock rate to 2.4MHz */
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 					      dmic_clk_reg, dmic_clk_mask,
 					      (0x03 << dmic_clk_shift));
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 					      dmic_clk_en_reg, 0x08, 0x08);
 		/* enable clock scaling */
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DMIC_CTL, 0x06, 0x06);
 		wcd938x_tx_connect_port(component, DMIC0 + (w->shift), 0, true);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		wcd938x_tx_connect_port(component, DMIC0 + (w->shift), 0,
 					false);
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_AMIC_CTL,
 				(0x01 << dmic_ctl_shift),
 				(0x01 << dmic_ctl_shift));
 		if (dmic2_left_en)
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				dmic2_left_en, 0x80, 0x00);
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 					      dmic_clk_en_reg, 0x08, 0x00);
 		break;
 	};
@@ -1604,9 +1643,7 @@ static int wcd938x_tx_swr_ctrl(struct snd_soc_dapm_widget *w,
 			rate = wcd938x_get_clk_rate(i);
 			wcd938x_set_swr_clk_rate(component, rate, bank);
 		}
-		ret = swr_slvdev_datapath_control(wcd938x->tx_swr_dev,
-		    wcd938x->tx_swr_dev->dev_num,
-		    true);
+		ret = p486_tx_datapath(component, wcd938x->tx_swr_dev, true);
 		if (strnstr(w->name, "ADC", sizeof("ADC"))) {
 			/* Copy clk settings to active bank */
 			wcd938x_set_swr_clk_rate(component, rate, !bank);
@@ -1617,9 +1654,7 @@ static int wcd938x_tx_swr_ctrl(struct snd_soc_dapm_widget *w,
 			rate = wcd938x_get_clk_rate(ADC_MODE_INVALID);
 			wcd938x_set_swr_clk_rate(component, rate, !bank);
 		}
-		ret = swr_slvdev_datapath_control(wcd938x->tx_swr_dev,
-		    wcd938x->tx_swr_dev->dev_num,
-		    false);
+		ret = p486_tx_datapath(component, wcd938x->tx_swr_dev, false);
 		if (strnstr(w->name, "ADC", sizeof("ADC")))
 			wcd938x_set_swr_clk_rate(component, rate, bank);
 		if (strnstr(w->name, "ADC1", sizeof("ADC1")))
@@ -1705,7 +1740,7 @@ int wcd938x_tx_channel_config(struct snd_soc_component *component,
 		val = mask;
 
 	if (!ret)
-		snd_soc_component_update_bits(component, reg, mask, val);
+		P486_TX_BITS(component, reg, mask, val);
 
 	return ret;
 }
@@ -1725,9 +1760,9 @@ static int wcd938x_codec_enable_adc(struct snd_soc_dapm_widget *w,
 	p485_tx_dapm_trace(w, event);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x08);
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);
 		set_bit(w->shift, &wcd938x->status_mask);
 		clk_rate = wcd938x_get_clk_rate(wcd938x->tx_mode[w->shift]);
@@ -1751,31 +1786,31 @@ static int wcd938x_codec_enable_adc(struct snd_soc_dapm_widget *w,
 		}
 		switch (w->shift) {
 		case 0:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F,
 				mode);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x10);
 			break;
 		case 1:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0,
 				mode << 4);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x20);
 			break;
 		case 2:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F,
 				mode);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x40);
 			break;
 		case 3:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0,
 				mode << 4);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x80);
 			break;
 		default:
@@ -1786,31 +1821,31 @@ static int wcd938x_codec_enable_adc(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_POST_PMD:
 		switch (w->shift) {
 		case 0:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0x0F,
 				0x00);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x10, 0x00);
 			break;
 		case 1:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_0_1, 0xF0,
 				0x00);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x20, 0x00);
 			break;
 		case 2:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0x0F,
 				0x00);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x40, 0x00);
 			break;
 		case 3:
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_TX_ANA_MODE_2_3, 0xF0,
 				0x00);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0x80, 0x00);
 			break;
 		default:
@@ -1824,7 +1859,7 @@ static int wcd938x_codec_enable_adc(struct snd_soc_dapm_widget *w,
 							false);
 			clear_bit(AMIC2_BCS_ENABLE, &wcd938x->status_mask);
 		}
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x08, 0x00);
 		clear_bit(w->shift, &wcd938x->status_mask);
 		break;
@@ -1861,13 +1896,13 @@ static int wcd938x_enable_req(struct snd_soc_dapm_widget *w,
 	p485_tx_dapm_trace(w, event);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_REQ_CTL, 0x02, 0x02);
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_REQ_CTL, 0x01, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		snd_soc_component_update_bits(component,
+		P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x00);
 		break;
 	};
@@ -1935,7 +1970,7 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 		wcd938x->pullup_ref[micb_index]++;
 		if ((wcd938x->pullup_ref[micb_index] == 1) &&
 		    (wcd938x->micb_ref[micb_index] == 0))
-			snd_soc_component_update_bits(component, micb_reg,
+			P486_TX_BITS(component, micb_reg,
 							0xC0, 0x80);
 		break;
 	case MICB_PULLUP_DISABLE:
@@ -1949,7 +1984,7 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 		}
 		if ((wcd938x->pullup_ref[micb_index] == 0) &&
 		    (wcd938x->micb_ref[micb_index] == 0))
-			snd_soc_component_update_bits(component, micb_reg,
+			P486_TX_BITS(component, micb_reg,
 							0xC0, 0x00);
 		break;
 	case MICB_ENABLE:
@@ -1961,21 +1996,21 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 		}
 		wcd938x->micb_ref[micb_index]++;
 		if (wcd938x->micb_ref[micb_index] == 1) {
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_DIG_CLK_CTL, 0xF0, 0xF0);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_DIGITAL_CDC_ANA_CLK_CTL, 0x10, 0x10);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 			       WCD938X_DIGITAL_CDC_ANA_TX_CLK_CTL, 0x01, 0x01);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_MICB1_TEST_CTL_2, 0x01, 0x01);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_MICB2_TEST_CTL_2, 0x01, 0x01);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_MICB3_TEST_CTL_2, 0x01, 0x01);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				WCD938X_MICB4_TEST_CTL_2, 0x01, 0x01);
-			snd_soc_component_update_bits(component,
+			P486_TX_BITS(component,
 				micb_reg, 0xC0, 0x40);
 			if (post_on_event)
 				blocking_notifier_call_chain(
@@ -1999,7 +2034,7 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 		}
 		if ((wcd938x->micb_ref[micb_index] == 0) &&
 		    (wcd938x->pullup_ref[micb_index] > 0))
-			snd_soc_component_update_bits(component, micb_reg,
+			P486_TX_BITS(component, micb_reg,
 							0xC0, 0x80);
 		else if ((wcd938x->micb_ref[micb_index] == 0) &&
 			 (wcd938x->pullup_ref[micb_index] == 0)) {
@@ -2008,7 +2043,7 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 						&wcd938x->mbhc->notifier,
 						pre_off_event,
 						&wcd938x->mbhc->wcd_mbhc);
-			snd_soc_component_update_bits(component, micb_reg,
+			P486_TX_BITS(component, micb_reg,
 							0xC0, 0xC0);
 			if (post_off_event && wcd938x->mbhc)
 				blocking_notifier_call_chain(
@@ -3163,6 +3198,52 @@ static const struct soc_enum rdac3_enum =
 static const struct snd_kcontrol_new rx_rdac3_mux =
 	SOC_DAPM_ENUM("RDAC3_MUX Mux", rdac3_enum);
 
+/* Preserve the real TG graph and widget IDs. 5.10 orders ADC after
+ * mixers on power-up and before them on power-down. Stage all port
+ * connections on the early mixers, then REQ, then enable datapath.
+ * On shutdown the ADC disconnects first; the late mixer commits the
+ * SoundWire disable after the REQ cleanup. No global DAPM changes.
+ */
+static int p486_amic_adc_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	if (event == SND_SOC_DAPM_PRE_PMU)
+		return wcd938x_tx_swr_ctrl(w, kcontrol, event);
+	return wcd938x_codec_enable_adc(w, kcontrol, event);
+}
+
+static int p486_amic_req_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	if (event == SND_SOC_DAPM_PRE_PMU)
+		return wcd938x_codec_enable_adc(w, kcontrol, event);
+	return wcd938x_tx_swr_ctrl(w, kcontrol, event);
+}
+
+static int p486_dmic_adc_event(struct snd_soc_dapm_widget *w,
+			       struct snd_kcontrol *kcontrol, int event)
+{
+	if (event == SND_SOC_DAPM_PRE_PMU)
+		return wcd938x_tx_swr_ctrl(w, kcontrol, event);
+	return wcd938x_codec_enable_dmic(w, kcontrol, event);
+}
+
+static int p486_dmic_mixer_event(struct snd_soc_dapm_widget *w,
+				 struct snd_kcontrol *kcontrol, int event)
+{
+	if (event == SND_SOC_DAPM_PRE_PMU)
+		return wcd938x_codec_enable_dmic(w, kcontrol, event);
+	return wcd938x_tx_swr_ctrl(w, kcontrol, event);
+}
+
+/* Real mixer, with a codec-local subsequence for the early TX phase. */
+#define P486_TX_EARLY_MIXER(wname, wreg, wshift, winvert, wcontrols, \
+			    wncontrols, wevent, wflags) \
+{ .id = snd_soc_dapm_mixer, .name = wname, \
+  SND_SOC_DAPM_INIT_REG_VAL(wreg, wshift, winvert), \
+  .kcontrol_news = wcontrols, .num_kcontrols = wncontrols, \
+  .event = wevent, .event_flags = wflags, .subseq = -1 }
+
 static const struct snd_soc_dapm_widget wcd938x_dapm_widgets[] = {
 
 	/*input widgets*/
@@ -3186,53 +3267,53 @@ static const struct snd_soc_dapm_widget wcd938x_dapm_widgets[] = {
 
 	/*tx widgets*/
 	SND_SOC_DAPM_ADC_E("ADC1", NULL, SND_SOC_NOPM, 0, 0,
-				wcd938x_codec_enable_adc,
+				p486_amic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("ADC2", NULL, SND_SOC_NOPM, 1, 0,
-				wcd938x_codec_enable_adc,
+				p486_amic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("ADC3", NULL, SND_SOC_NOPM, 2, 0,
-				wcd938x_codec_enable_adc,
+				p486_amic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("ADC4", NULL, SND_SOC_NOPM, 3, 0,
-				wcd938x_codec_enable_adc,
+				p486_amic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC1", NULL, SND_SOC_NOPM, 0, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC2", NULL, SND_SOC_NOPM, 1, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC3", NULL, SND_SOC_NOPM, 2, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC4", NULL, SND_SOC_NOPM, 3, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC5", NULL, SND_SOC_NOPM, 4, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC6", NULL, SND_SOC_NOPM, 5, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC7", NULL, SND_SOC_NOPM, 6, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_ADC_E("DMIC8", NULL, SND_SOC_NOPM, 7, 0,
-				wcd938x_codec_enable_dmic,
+				p486_dmic_adc_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
-	SND_SOC_DAPM_MIXER_E("ADC1 REQ", SND_SOC_NOPM, 0, 0,
-				NULL, 0, wcd938x_enable_req,
+	P486_TX_EARLY_MIXER("ADC1 REQ", SND_SOC_NOPM, 0, 0,
+				NULL, 0, p486_amic_req_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("ADC2 REQ", SND_SOC_NOPM, 1, 0,
-				NULL, 0, wcd938x_enable_req,
+	P486_TX_EARLY_MIXER("ADC2 REQ", SND_SOC_NOPM, 1, 0,
+				NULL, 0, p486_amic_req_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("ADC3 REQ", SND_SOC_NOPM, 2, 0,
-				NULL, 0, wcd938x_enable_req,
+	P486_TX_EARLY_MIXER("ADC3 REQ", SND_SOC_NOPM, 2, 0,
+				NULL, 0, p486_amic_req_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("ADC4 REQ", SND_SOC_NOPM, 3, 0,
-				NULL, 0, wcd938x_enable_req,
+	P486_TX_EARLY_MIXER("ADC4 REQ", SND_SOC_NOPM, 3, 0,
+				NULL, 0, p486_amic_req_event,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
 	SND_SOC_DAPM_MUX("ADC2 MUX", SND_SOC_NOPM, 0, 0,
@@ -3248,49 +3329,49 @@ static const struct snd_soc_dapm_widget wcd938x_dapm_widgets[] = {
 	/*tx mixers*/
 	SND_SOC_DAPM_MIXER_E("ADC1_MIXER", SND_SOC_NOPM, 0, 0,
 				adc1_switch, ARRAY_SIZE(adc1_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				wcd938x_enable_req, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MIXER_E("ADC2_MIXER", SND_SOC_NOPM, 0, 0,
 				adc2_switch, ARRAY_SIZE(adc2_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				wcd938x_enable_req, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MIXER_E("ADC3_MIXER", SND_SOC_NOPM, 0, 0, adc3_switch,
-				ARRAY_SIZE(adc3_switch), wcd938x_tx_swr_ctrl,
+				ARRAY_SIZE(adc3_switch), wcd938x_enable_req,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MIXER_E("ADC4_MIXER", SND_SOC_NOPM, 0, 0, adc4_switch,
-				ARRAY_SIZE(adc4_switch), wcd938x_tx_swr_ctrl,
+				ARRAY_SIZE(adc4_switch), wcd938x_enable_req,
 				SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC1_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC1_MIXER", SND_SOC_NOPM, 0,
 				0, dmic1_switch, ARRAY_SIZE(dmic1_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC2_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC2_MIXER", SND_SOC_NOPM, 1,
 				0, dmic2_switch, ARRAY_SIZE(dmic2_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC3_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC3_MIXER", SND_SOC_NOPM, 2,
 				0, dmic3_switch, ARRAY_SIZE(dmic3_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC4_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC4_MIXER", SND_SOC_NOPM, 3,
 				0, dmic4_switch, ARRAY_SIZE(dmic4_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC5_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC5_MIXER", SND_SOC_NOPM, 4,
 				0, dmic5_switch, ARRAY_SIZE(dmic5_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC6_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC6_MIXER", SND_SOC_NOPM, 5,
 				0, dmic6_switch, ARRAY_SIZE(dmic6_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC7_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC7_MIXER", SND_SOC_NOPM, 6,
 				0, dmic7_switch, ARRAY_SIZE(dmic7_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MIXER_E("DMIC8_MIXER", SND_SOC_NOPM, 0,
+	P486_TX_EARLY_MIXER("DMIC8_MIXER", SND_SOC_NOPM, 7,
 				0, dmic8_switch, ARRAY_SIZE(dmic8_switch),
-				wcd938x_tx_swr_ctrl, SND_SOC_DAPM_PRE_PMU |
+				p486_dmic_mixer_event, SND_SOC_DAPM_PRE_PMU |
 				SND_SOC_DAPM_POST_PMD),
 	/* micbias widgets*/
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS1", SND_SOC_NOPM, 0, 0,

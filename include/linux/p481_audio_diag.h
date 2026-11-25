@@ -13,6 +13,7 @@ void p481_alive_start(void);
 void p481_rpm_forbid_device(struct device *dev);
 int p481_diag_register(void);
 void p483_card_auto_start(void);
+void p486_card_adsp_up(void);
 unsigned int p483_bolero_guard(void);
 #else
 static inline bool p481_card_armed(void) { return false; }
