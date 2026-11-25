@@ -1,0 +1,32 @@
+name: One-shot verified P486 source tag (NO FLASH)
+on:
+  push:
+    branches: [ci/tag-verified-p486]
+    paths: ['.github/workflows/tag-verified-p486.yml']
+permissions:
+  contents: write
+jobs:
+  tag:
+    if: github.repository == 'GiulianoB-1/A526B-Mangrove-Source' && github.ref == 'refs/heads/ci/tag-verified-p486'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify exact P486 ancestry and create immutable lightweight tag
+        run: |
+          set -Eeuo pipefail
+          target=585e7d062db0715e42a1b5bd366aed43031d29f2
+          tag=verified/p486-mic
+          git merge-base --is-ancestor "$target" HEAD
+          grep -Fq "$target" ci/VERIFIED.md
+          grep -Fq '91dfc326c52bb71c3fece2a07bb3901bf2b980c1dbfb82b276ad265706526087' ci/VERIFIED.md
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$target"
+          else
+            git tag "$tag" "$target"
+            git push origin "refs/tags/$tag"
+          fi
+          test "$(git ls-remote --tags origin "refs/tags/$tag" | cut -f1)" = "$target"
+          printf 'Verified tag: %s -> %s\n' "$tag" "$target" >> "$GITHUB_STEP_SUMMARY"
