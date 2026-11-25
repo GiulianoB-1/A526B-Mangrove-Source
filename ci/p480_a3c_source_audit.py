@@ -420,7 +420,7 @@ def main() -> None:
         check(any(name in line and why in line and "SOURCE_PREDICTION_ONLY" in line
                   for line in expected.splitlines()),
               "live-r02 source-only predicted MI2S skip: " + name)
-    check("MANGROVE-P485-A3C-HLT.boot.img" in package and
+    check("MANGROVE-P486-A3C-HLT.boot.img" in package and
           "P480-A3C-strings-proof.json" in package and
           "P480 A3c LINK_DIR_TRIM name=" in package and
           "P480 A3c ROUTES added=" in package and
