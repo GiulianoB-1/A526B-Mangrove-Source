@@ -7,3 +7,6 @@ Review required: B2DIAG boot SHA256, source commit, exact cmdline diff, package 
 ## Packaging audit correction
 
 Run 45670833619 compiled and passed all original source, kernel and P479 repack audits. B2DIAG packaging stopped at the incorrectly expected literal a52.diag= in Image. The actual early_param("a52.diag", a52_diag_parse) stores the bare NUL-terminated name, per include/linux/init.h __setup_param; the later SSR __setup retains its explicit equals sign. Require both exact linked names and their actual source registrations instead. No kernel code, cmdline, image preservation checks, runtime settings or flash policy changed. Prior failing run produced no uploaded image. Rebuild required.
+
+## ABL correction
+Hardware proved primary header limited to first 511 bytes. Preserve all complete previously effective tokens except printk.time=1 (CONFIG_PRINTK_TIME=y) and no_console_suspend (identical built-in token; drivers/of/fdt.c:1077-1095 prefixes CONFIG_CMDLINE before bootargs under EXTEND). Remove partial watchdo and never-effective watchdog.handle_boot_enabled=1 / cpuidle.off=1. Verify complete requested tokens in primary field; zero extra field. New header only; payloads and boot ID unchanged. No new runtime changes. P488-B2 independent, sync off.

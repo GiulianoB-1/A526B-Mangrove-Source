@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 from p480_boot_repack import parse_boot
+from p487_effective_cmdline import effective_cmdline
 
 EXTRA = b" a52.diag=1 a52.mss_ssr_test=1"
 FIELDS = ((64, 576), (608, 1632))
@@ -17,34 +18,14 @@ def require(ok, why):
     if not ok:
         raise SystemExit("P487 B2DIAG BLOCKED: " + why)
 
-def append_exact(source):
+def append_exact(source, config):
     before = parse_boot(source)
-    raw = []
-    for start, end in FIELDS:
-        field = source[start:end]
-        value, sep, tail = field.partition(b"\0")
-        require(not any(tail), "unexpected nonzero command-line padding")
-        raw.append(value)
-    # Append to the last used field, preserving all existing bytes.
-    which = 1 if raw[1] else 0
-    start, end = FIELDS[which]
-    if len(raw[which]) + len(EXTRA) >= end - start:
-        require(which == 0 and not raw[1], "command line capacity")
-        which = 1
-        start, end = FIELDS[which]
-    require(len(raw[which]) + len(EXTRA) < end - start, "command line capacity")
-    pos = start + len(raw[which])
-    result = bytearray(source)
-    result[pos:pos + len(EXTRA)] = EXTRA
+    result, effective, removed = effective_cmdline(source, config, EXTRA.decode().split())
     after = parse_boot(result)
-    require(after["cmdline"] == before["cmdline"] + EXTRA.decode(), "exact appended cmdline")
-    require(result[:pos] == source[:pos] and result[pos+len(EXTRA):] == source[pos+len(EXTRA):],
-            "bytes outside append changed")
-    require(len(result) == len(source), "partition size changed")
     for key in before:
         if key not in ("cmdline", "header_page"):
             require(before[key] == after[key], "changed parsed field " + key)
-    return bytes(result), before, after, pos
+    return result, before, after, effective, removed
 
 def main():
     ap = argparse.ArgumentParser()
@@ -99,7 +80,7 @@ def main():
             require(not any(x in line for x in ("a52.mss_sync_ssr", "a52.mss_ssr_test",
                                                 "a52.diag=", "a52.autostart=",
                                                 "androidboot.selinux=permissive")), "built-in cmdline conflict")
-    result, before, after, pos = append_exact(source)
+    result, before, after, effective, removed = append_exact(source, config)
     require(not any(w.split("=")[0] in ("a52.mss_sync_ssr","a52.autostart","a52.autostart_ipa","nohlt")
                     for w in after["cmdline"].split()), "unexpected override")
     report = {
@@ -113,7 +94,9 @@ def main():
         "staged_cmdline": before["cmdline"],
         "B2DIAG_cmdline": after["cmdline"],
         "appended_args": EXTRA.decode().split(),
-        "append_offset": pos,
+        "effective_first_511_bytes": effective,
+        "effective_length": len(effective.encode("ascii")),
+        "removed_tokens_with_proof": removed,
         "only_cmdline_bytes_changed_from_same_build_staged": True,
         "all_payloads_and_boot_id_unchanged": True,
         "sync_bridge_enabled": False,

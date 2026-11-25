@@ -35,5 +35,6 @@
     "u1_patch_boot_dtb"
   ],
   "note": "Final P479 HLT boot is the only allowed P480 repack template. Outer archive, inner boot, DTB, ramdisk and cmdline are pinned. This provenance does not grant flash approval.",
-  "flash_authorized": false
+  "flash_authorized": false,
+  "hardware_cmdline_note": "User hardware evidence: Samsung ABL copies only first 511 bytes of primary header command line, ends in watchdo; ignores extra_cmdline. watchdog.handle_boot_enabled=1 and cpuidle.off=1 have not reached kernel as complete header arguments. Original pin unchanged. CONFIG_CMDLINE_EXTEND prefixes built-in string; live /proc/cmdline reaches 2048 bytes including newline. Do not activate previously dead tail."
 }
