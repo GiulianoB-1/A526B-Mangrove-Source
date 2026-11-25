@@ -68,8 +68,20 @@ def main():
     for marker in (b"P487 NOTIF reg name=", b"P487 NOTIF unreg name=",
                    b"P487 NOTIF begin name=", b"P487 NOTIF call name=",
                    b"P487 MSS SSR_TEST", b"a52.mss_ssr_test=",
-                   b"a52.diag=", b"P470 MSS NOTIF event=", b"P487 INIT_MODEM"):
+                   b"P470 MSS NOTIF event=", b"P487 INIT_MODEM"):
         require(marker in native, "missing linked marker " + repr(marker))
+    # early_param stores the bare parameter name; __setup stores its
+    # explicitly supplied "=" suffix. Verify exact linked NUL-terminated
+    # names and their actual registrations, not a loose substring.
+    gates = Path("drivers/a52_447/a52_447_gates.c").read_text()
+    sysfs = Path("drivers/remoteproc/remoteproc_sysfs.c").read_text()
+    require('early_param("a52.diag", a52_diag_parse);' in gates and
+            'kstrtobool(v, &a52_diag_verbose)' in gates,
+            "diagnostic early_param registration")
+    require('__setup("a52.mss_ssr_test=", p487_mss_ssr_test_setup);' in sysfs,
+            "SSR test setup registration")
+    require(b"a52.diag\x00" in native and b"a52.mss_ssr_test=\x00" in native,
+            "exact linked diagnostic parameter names")
     for marker in (b"P487 TAS STREAM ch=", b"P487 TAS CALIB_UNWIND"):
         require(marker not in native, "unexpected runtime TAS marker")
     config = (pkg / ".config").read_text().splitlines()
