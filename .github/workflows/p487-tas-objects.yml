@@ -4,6 +4,7 @@ on:
     branches: ['feature/p487-tas-autostart', 'feature/p487-tas-compile-review']
     paths:
       - 'drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x/**'
+      - 'drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/Makefile'
       - 'ci/p487_tas_object_audit.py'
       - '.github/workflows/p487-tas-objects.yml'
 permissions:
@@ -34,6 +35,8 @@ jobs:
             grep -Fxq "CONFIG_${flag}=y" out_TAS/.config
           done
           dir=drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x
-          make "${args[@]}" -j"$(nproc)" "$dir/os_layer/src/tas256x-codec.o" "$dir/os_layer/src/tas256x-regmap.o" "$dir/physical_layer/src/tas256x.o" "$dir/logical_layer/src/tas256x-logic.o" "$dir/algo/src/tas25xx-algo-common.o" "$dir/algo/src/tas25xx-calib.o" "$dir/algo/src/tas25xx-algo-intf.o" "$dir/algo/platform/qcom/tas25xx-algo-qdsp-intf.o" "$dir/misc/tas256x-misc.o" "$dir/algo/src/tas25xx-calib-validation.o"
+          # Keep compiling independent requested objects to report all compiler errors.
+          # make -k still returns nonzero on any failure; no audit bypass.
+          make "${args[@]}" -k -j"$(nproc)" "$dir/os_layer/src/tas256x-codec.o" "$dir/os_layer/src/tas256x-regmap.o" "$dir/physical_layer/src/tas256x.o" "$dir/logical_layer/src/tas256x-logic.o" "$dir/algo/src/tas25xx-algo-common.o" "$dir/algo/src/tas25xx-calib.o" "$dir/algo/src/tas25xx-algo-intf.o" "$dir/algo/platform/qcom/tas25xx-algo-qdsp-intf.o" "$dir/misc/tas256x-misc.o" "$dir/algo/src/tas25xx-calib-validation.o"
           python3 ci/p487_tas_object_audit.py "out_TAS/$dir"
           test ! -e out_TAS/arch/arm64/boot/Image
