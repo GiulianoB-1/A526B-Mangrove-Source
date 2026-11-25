@@ -46,3 +46,7 @@ All 27 pinned donor files imported, donor external build files saved as .tg. Com
 ## TAS object CI fix 1
 
 Run 45651221584 failed before compiling driver code: Kbuild single-target recursion could not descend from a3b/asoc/codecs into tas256x. Add subdir-$(CONFIG_SND_SOC_TAS256x) only under ifdef single-build; this is traversal, not an obj-y link. The production ci/build.config stays unchanged, with COMPILE_TEST and TAS not enabled. Add parent Makefile to object-review workflow paths and use make -k to report independent compiler failures while preserving nonzero exit. No runtime code or protection changes, no flash.
+
+## TAS object CI fix 2
+
+Run 45652438229 reached all ten requested native object compilations. Clang rejected TRUE/FALSE macro redefinitions against ACPI and misleading indentation of unconditional kfree calls in tas256x_i2c_remove. Guard the equivalent TG boolean macros and correct indentation only; cleanup control flow is unchanged. Keep Werror, original receiver writes, compile-only traversal and all hardware gates. No production config changes. Runtime probe/remove lifetime and protection validation still pending.

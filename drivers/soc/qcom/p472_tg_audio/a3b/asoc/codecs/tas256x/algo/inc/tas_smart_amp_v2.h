@@ -65,8 +65,13 @@ enum module_id_t {
 #define CHANNEL0        1
 #define CHANNEL1        2
 
+/* ACPI may already define these equivalent boolean constants. */
+#ifndef TRUE
 #define TRUE            1
+#endif
+#ifndef FALSE
 #define FALSE           0
+#endif
 
 #define TAS_DSP_SWAP_IDX       3
 
