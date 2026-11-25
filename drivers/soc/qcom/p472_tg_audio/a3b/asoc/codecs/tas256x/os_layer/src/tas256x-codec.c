@@ -1694,11 +1694,11 @@ int tas256x_register_codec(struct tas256x_priv *p_tas256x)
 	dev_info(plat_data->dev, "%s, enter\n", __func__);
 
 	if (p_tas256x->mn_channels == 2) {
-		n_result = devm_snd_soc_register_component(plat_data->dev,
+		n_result = snd_soc_register_component(plat_data->dev,
 			&soc_codec_driver_tas256x_stereo,
 			tas256x_dai_driver, ARRAY_SIZE(tas256x_dai_driver));
 	} else {
-		n_result = devm_snd_soc_register_component(plat_data->dev,
+		n_result = snd_soc_register_component(plat_data->dev,
 			&soc_codec_driver_tas256x_mono,
 			tas256x_dai_driver, ARRAY_SIZE(tas256x_dai_driver));
 	}

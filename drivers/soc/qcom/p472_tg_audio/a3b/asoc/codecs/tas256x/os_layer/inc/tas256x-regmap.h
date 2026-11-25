@@ -6,6 +6,10 @@ struct linux_platform {
 	struct device *dev;
 	struct i2c_client *client;
 	struct regmap *regmap;
+	struct regmap *left_regmap;
+	bool stopping;
+	bool irq_requested[2];
+	struct mutex irq_lock;
 	struct hrtimer mtimer;
 	struct snd_soc_component *codec;
 	/* device is working, but system is suspended */

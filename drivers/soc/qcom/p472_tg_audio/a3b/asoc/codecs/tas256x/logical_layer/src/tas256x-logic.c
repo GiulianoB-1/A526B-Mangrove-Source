@@ -987,8 +987,10 @@ int tas256x_register_device(struct tas256x_priv  *p_tas256x)
 				tas2558_specific;
 			break;
 		}
-		n_result |= tas256x_set_misc_config(p_tas256x, 0,
+		n_result = tas256x_set_misc_config(p_tas256x, 0,
 				(i == 0) ? channel_left : channel_right);
+		if (n_result < 0)
+			goto err;
 	}
 err:
 	return n_result;

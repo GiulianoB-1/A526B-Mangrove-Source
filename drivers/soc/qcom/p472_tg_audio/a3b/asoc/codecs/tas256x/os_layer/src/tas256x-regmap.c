@@ -95,9 +95,10 @@ static int tas256x_regmap_write(void *plat_data, unsigned int i2c_addr,
 	if (platform_data->i2c_suspend)
 		return ERROR_I2C_SUSPEND;
 
-	platform_data->client->addr = i2c_addr;
+	if (i2c_addr != 0x4c && i2c_addr != 0x4d)
+		return -EINVAL;
 	while (retry_count--) {
-		nResult = regmap_write(platform_data->regmap, reg,
+		nResult = regmap_write((i2c_addr == 0x4d ? platform_data->left_regmap : platform_data->regmap), reg,
 			value);
 		if (nResult >= 0)
 			break;
@@ -121,9 +122,10 @@ static int tas256x_regmap_bulk_write(void *plat_data, unsigned int i2c_addr,
 	if (platform_data->i2c_suspend)
 		return ERROR_I2C_SUSPEND;
 
-	platform_data->client->addr = i2c_addr;
+	if (i2c_addr != 0x4c && i2c_addr != 0x4d)
+		return -EINVAL;
 	while (retry_count--) {
-		nResult = regmap_bulk_write(platform_data->regmap, reg,
+		nResult = regmap_bulk_write((i2c_addr == 0x4d ? platform_data->left_regmap : platform_data->regmap), reg,
 			 pData, nLength);
 		if (nResult >= 0)
 			break;
@@ -146,9 +148,10 @@ static int tas256x_regmap_read(void *plat_data, unsigned int i2c_addr,
 	if (platform_data->i2c_suspend)
 		return ERROR_I2C_SUSPEND;
 
-	platform_data->client->addr = i2c_addr;
+	if (i2c_addr != 0x4c && i2c_addr != 0x4d)
+		return -EINVAL;
 	while (retry_count--) {
-		nResult = regmap_read(platform_data->regmap, reg,
+		nResult = regmap_read((i2c_addr == 0x4d ? platform_data->left_regmap : platform_data->regmap), reg,
 			value);
 		if (nResult >= 0)
 			break;
@@ -172,9 +175,10 @@ static int tas256x_regmap_bulk_read(void *plat_data, unsigned int i2c_addr,
 	if (platform_data->i2c_suspend)
 		return ERROR_I2C_SUSPEND;
 
-	platform_data->client->addr = i2c_addr;
+	if (i2c_addr != 0x4c && i2c_addr != 0x4d)
+		return -EINVAL;
 	while (retry_count--) {
-		nResult = regmap_bulk_read(platform_data->regmap, reg,
+		nResult = regmap_bulk_read((i2c_addr == 0x4d ? platform_data->left_regmap : platform_data->regmap), reg,
 			 pData, nLength);
 		if (nResult >= 0)
 			break;
@@ -198,9 +202,10 @@ static int tas256x_regmap_update_bits(void *plat_data, unsigned int i2c_addr,
 	if (platform_data->i2c_suspend)
 		return ERROR_I2C_SUSPEND;
 
-	platform_data->client->addr = i2c_addr;
+	if (i2c_addr != 0x4c && i2c_addr != 0x4d)
+		return -EINVAL;
 	while (retry_count--) {
-		nResult = regmap_update_bits(platform_data->regmap, reg,
+		nResult = regmap_update_bits((i2c_addr == 0x4d ? platform_data->left_regmap : platform_data->regmap), reg,
 			mask, value);
 		if (nResult >= 0)
 			break;
@@ -966,44 +971,23 @@ static void tas256x_hw_reset(struct tas256x_priv *p_tas256x)
 
 void tas256x_enable_irq(struct tas256x_priv *p_tas256x, bool enable)
 {
-	static int irq_enabled[2] = {0};
-	struct irq_desc *desc = NULL;
-	struct linux_platform *plat_data = NULL;
-	int i = 0;
+	struct linux_platform *plat = p_tas256x->platform_data;
+	int i;
 
-	plat_data = (struct linux_platform *) p_tas256x->platform_data;
-	if (enable) {
-		if (p_tas256x->mb_irq_eable)
-			return;
-		for (i = 0; i < p_tas256x->mn_channels; i++) {
-			if (gpio_is_valid(p_tas256x->devs[i]->mn_irq_gpio) &&
-				irq_enabled[i] == 0) {
-				if (i == 0) {
-					desc = irq_to_desc(
-						p_tas256x->devs[i]->mn_irq);
-					if (desc && desc->depth > 0)
-						enable_irq(
-							p_tas256x->devs[i]->mn_irq);
-					else
-						dev_info(plat_data->dev,
-							"### irq already enabled");
-				} else {
-					enable_irq(p_tas256x->devs[i]->mn_irq);
-				}
-				irq_enabled[i] = 1;
-			}
-		}
-		p_tas256x->mb_irq_eable = true;
-	} else {
-		for (i = 0; i < p_tas256x->mn_channels; i++) {
-			if (gpio_is_valid(p_tas256x->devs[i]->mn_irq_gpio)
-					&& irq_enabled[i] == 1) {
-				disable_irq_nosync(p_tas256x->devs[i]->mn_irq);
-				irq_enabled[i] = 0;
-			}
-		}
-		p_tas256x->mb_irq_eable = false;
+	mutex_lock(&plat->irq_lock);
+	if (plat->stopping || p_tas256x->mb_irq_eable == enable)
+		goto out;
+	for (i = 0; i < p_tas256x->mn_channels; i++) {
+		if (!plat->irq_requested[i])
+			continue;
+		if (enable)
+			enable_irq(p_tas256x->devs[i]->mn_irq);
+		else
+			disable_irq_nosync(p_tas256x->devs[i]->mn_irq);
 	}
+	p_tas256x->mb_irq_eable = enable;
+out:
+	mutex_unlock(&plat->irq_lock);
 }
 
 static void irq_work_routine(struct work_struct *work)
@@ -1017,7 +1001,7 @@ static void irq_work_routine(struct work_struct *work)
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_lock(&p_tas256x->codec_lock);
 #endif
-	if (plat_data->mb_runtime_suspend) {
+	if (READ_ONCE(plat_data->stopping) || plat_data->mb_runtime_suspend) {
 		pr_info("%s, Runtime Suspended\n", __func__);
 		goto end;
 	}
@@ -1041,8 +1025,9 @@ static void init_work_routine(struct work_struct *work)
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_lock(&p_tas256x->codec_lock);
 #endif
-	/*Init Work Function. return is ignored*/
-	tas256x_init_work_func(p_tas256x);
+	/* No restart during teardown or suspend. */
+	if (!READ_ONCE(plat_data->stopping) && !plat_data->mb_runtime_suspend)
+		tas256x_init_work_func(p_tas256x);
 
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_unlock(&p_tas256x->codec_lock);
@@ -1056,6 +1041,8 @@ static irqreturn_t tas256x_irq_handler(int irq, void *dev_id)
 
 	plat_data = (struct linux_platform *) p_tas256x->platform_data;
 	/* get IRQ status after 100 ms */
+	if (READ_ONCE(plat_data->stopping))
+		return IRQ_HANDLED;
 	schedule_delayed_work(&p_tas256x->irq_work, msecs_to_jiffies(100));
 	return IRQ_HANDLED;
 }
@@ -1069,10 +1056,8 @@ static int tas256x_runtime_suspend(struct tas256x_priv *p_tas256x)
 
 	plat_data->mb_runtime_suspend = true;
 
-	if (delayed_work_pending(&p_tas256x->irq_work)) {
-		dev_dbg(plat_data->dev, "cancel IRQ work\n");
-		cancel_delayed_work_sync(&p_tas256x->irq_work);
-	}
+	/* Caller may hold codec_lock; synchronous cancellation can deadlock. */
+	cancel_delayed_work(&p_tas256x->irq_work);
 
 	return 0;
 }
@@ -1095,7 +1080,7 @@ static int tas256x_pm_suspend(struct device *dev)
 	struct linux_platform *plat_data = NULL;
 
 	if (!p_tas256x) {
-		dev_err(plat_data->dev, "drvdata is NULL\n");
+		dev_err(dev, "drvdata is NULL\n");
 		return -EINVAL;
 	}
 	plat_data = (struct linux_platform *) p_tas256x->platform_data;
@@ -1112,7 +1097,7 @@ static int tas256x_pm_resume(struct device *dev)
 	struct linux_platform *plat_data = NULL;
 
 	if (!p_tas256x) {
-		dev_err(plat_data->dev, "drvdata is NULL\n");
+		dev_err(dev, "drvdata is NULL\n");
 		return -EINVAL;
 	}
 	plat_data = (struct linux_platform *) p_tas256x->platform_data;
@@ -1130,7 +1115,8 @@ struct tas256x_priv *g_p_tas256x;
 void tas256x_software_reset(void *prv_data)
 {
 	pr_info("[TI-SmartPA:%s]\n", __func__);
-	schedule_delayed_work(&g_p_tas256x->dc_work, msecs_to_jiffies(10));
+	if (g_p_tas256x)
+		schedule_delayed_work(&g_p_tas256x->dc_work, msecs_to_jiffies(10));
 }
 
 static void dc_work_routine(struct work_struct *work)
@@ -1143,7 +1129,8 @@ static void dc_work_routine(struct work_struct *work)
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_lock(&p_tas256x->codec_lock);
 #endif
-	tas256x_dc_work_func(p_tas256x, s_dc_detect.channel);
+	if (!READ_ONCE(plat_data->stopping) && !plat_data->mb_runtime_suspend)
+		tas256x_dc_work_func(p_tas256x, READ_ONCE(s_dc_detect.channel));
 
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	mutex_unlock(&p_tas256x->codec_lock);
@@ -1158,7 +1145,8 @@ void schedule_init_work(struct tas256x_priv *p_tas256x)
 	struct linux_platform *plat_data = NULL;
 
 	plat_data = (struct linux_platform *) p_tas256x->platform_data;
-	schedule_delayed_work(&p_tas256x->init_work, msecs_to_jiffies(50));
+	if (!READ_ONCE(plat_data->stopping))
+		schedule_delayed_work(&p_tas256x->init_work, msecs_to_jiffies(50));
 }
 
 static int tas256x_parse_dt(struct device *dev,
@@ -1192,8 +1180,7 @@ static int tas256x_parse_dt(struct device *dev,
 		p_tas256x->devs[i] = devm_kzalloc(dev, sizeof(struct tas_device),
 					GFP_KERNEL);
 		if (p_tas256x->devs[i] == NULL) {
-			rc = -1;
-			break;
+			return -ENOMEM;
 		}
 
 		rc = of_property_read_u32(np, dts_tag[i][0],
@@ -1242,6 +1229,10 @@ static int tas256x_parse_dt(struct device *dev,
 
 	if (rc)
 		goto EXIT;
+	/* R02 provides one shared reset and one shared IRQ on channel 0. */
+	if (!gpio_is_valid(p_tas256x->devs[0]->mn_reset_gpio) ||
+	    !gpio_is_valid(p_tas256x->devs[0]->mn_irq_gpio))
+		return -EINVAL;
 
 	rc = of_property_read_u32(np, "ti,frame-start",
 		&p_tas256x->mn_frame_start);
@@ -1335,11 +1326,14 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	struct linux_platform *plat_data;
 	int n_result = 0;
 	int i = 0;
+	struct i2c_client *left;
 
 	if (!p487_tas_enabled) {
 		dev_info(&p_client->dev, "P487 TAS PROBE_GATED rc=%d\n", -ENODEV);
 		return -ENODEV;
 	}
+	if (p_client->addr != 0x4c || !p_client->dev.of_node)
+		return -EINVAL;
 	dev_info(&p_client->dev, "Driver Tag: %s\n", TAS256X_DRIVER_TAG);
 	dev_info(&p_client->dev, "%s enter\n", __func__);
 
@@ -1381,7 +1375,22 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 		goto err;
 	}
 
+	left = devm_i2c_new_dummy_device(&p_client->dev, p_client->adapter, 0x4d);
+	if (IS_ERR(left))
+		return PTR_ERR(left);
+	plat_data->left_regmap = devm_regmap_init_i2c(left, &tas256x_i2c_regmap);
+	if (IS_ERR(plat_data->left_regmap))
+		return PTR_ERR(plat_data->left_regmap);
 	mutex_init(&p_tas256x->dev_lock);
+	mutex_init(&plat_data->irq_lock);
+#if IS_ENABLED(CONFIG_TAS256X_CODEC)
+	mutex_init(&p_tas256x->codec_lock);
+#endif
+	INIT_DELAYED_WORK(&p_tas256x->irq_work, irq_work_routine);
+	INIT_DELAYED_WORK(&p_tas256x->init_work, init_work_routine);
+#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
+	INIT_DELAYED_WORK(&p_tas256x->dc_work, dc_work_routine);
+#endif
 	p_tas256x->hw_reset = tas256x_hw_reset;
 	p_tas256x->enable_irq = tas256x_enable_irq;
 	p_tas256x->schedule_init_work = schedule_init_work;
@@ -1399,7 +1408,7 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 
 	for (i = 0; i < p_tas256x->mn_channels; i++) {
 		if (gpio_is_valid(p_tas256x->devs[i]->mn_reset_gpio)) {
-			n_result = gpio_request(
+			n_result = devm_gpio_request(&p_client->dev,
 					p_tas256x->devs[i]->mn_reset_gpio,
 					reset_gpio_label[i]);
 			if (n_result) {
@@ -1431,12 +1440,10 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 		}
 	}
 
-	INIT_DELAYED_WORK(&p_tas256x->irq_work, irq_work_routine);
-
 	for (i = 0; i < p_tas256x->mn_channels; i++) {
 		if (gpio_is_valid(p_tas256x->devs[i]->mn_irq_gpio)) {
 			n_result =
-				gpio_request(
+				devm_gpio_request(&p_client->dev,
 					p_tas256x->devs[i]->mn_irq_gpio,
 					irq_gpio_label[i]);
 			if (n_result < 0) {
@@ -1447,7 +1454,9 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 					p_tas256x->devs[i]->mn_irq_gpio);
 				goto err;
 			}
-			gpio_direction_input(p_tas256x->devs[i]->mn_irq_gpio);
+			n_result = gpio_direction_input(p_tas256x->devs[i]->mn_irq_gpio);
+			if (n_result)
+				goto err;
 			/*tas256x_dev_write(p_tas256x,
 			 *	(i == 0)? channel_left : channel_right,
 			 *	TAS256X_MISCCONFIGURATIONREG0, 0xce);
@@ -1458,6 +1467,10 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 			dev_info(plat_data->dev, "irq = %d\n",
 				p_tas256x->devs[i]->mn_irq);
 
+			if (p_tas256x->devs[i]->mn_irq < 0) {
+				n_result = p_tas256x->devs[i]->mn_irq;
+				goto err;
+			}
 			n_result = request_threaded_irq(
 					p_tas256x->devs[i]->mn_irq,
 					tas256x_irq_handler,
@@ -1469,15 +1482,12 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 					"request_irq failed, %d\n", n_result);
 				goto err;
 			}
+			plat_data->irq_requested[i] = true;
 			disable_irq_nosync(p_tas256x->devs[i]->mn_irq);
 		}
 	}
 
-	tas256x_enable_irq(p_tas256x, true);
-	INIT_DELAYED_WORK(&p_tas256x->init_work, init_work_routine);
-
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
-	mutex_init(&p_tas256x->codec_lock);
 	n_result = tas256x_register_codec(p_tas256x);
 	if (n_result < 0) {
 		dev_err(plat_data->dev,
@@ -1486,64 +1496,59 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	}
 #endif
 
-#if IS_ENABLED(CONFIG_TAS256X_MISC)
-	mutex_init(&p_tas256x->file_lock);
-	n_result = tas256x_register_misc(p_tas256x);
-	if (n_result < 0) {
-		dev_err(plat_data->dev, "register codec failed %d\n",
-			n_result);
-		goto err;
-	}
-#endif
-
-
-#if IS_ENABLED(CONFIG_TAS25XX_ALGO)
-#if IS_ENABLED(CONFIG_PLATFORM_QCOM)
-	INIT_DELAYED_WORK(&p_tas256x->dc_work, dc_work_routine);
+/* Review 5 probe-only: raw misc access not exposed until lifetime/ABI review. */
+	dev_info(&p_client->dev, "P487 TAS MISC_GATED reason=PROBE_REVIEW\n");
+#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
 	g_p_tas256x = p_tas256x;
 	register_tas256x_reset_func(tas256x_software_reset, &s_dc_detect);
-#endif /*CONFIG_PLATFORM_QCOM*/
-#endif /*CONFIG_TAS25XX_ALGO*/
-
+#endif
+	tas256x_enable_irq(p_tas256x, true);
+	dev_info(&p_client->dev, "P487 TAS PROBE_READY channels=2 left=0x4d right=0x4c\n");
+	return 0;
 
 err:
+	/* All work/locks exist before IRQ registration. Stop producers first. */
+	if (p_tas256x && plat_data && p_tas256x->platform_data &&
+	    p_tas256x->devs) {
+		mutex_lock(&plat_data->irq_lock);
+		WRITE_ONCE(plat_data->stopping, true);
+		mutex_unlock(&plat_data->irq_lock);
+		for (i = 0; i < p_tas256x->mn_channels; i++)
+			if (plat_data->irq_requested[i])
+				free_irq(p_tas256x->devs[i]->mn_irq, p_tas256x);
+		cancel_delayed_work_sync(&p_tas256x->irq_work);
+		cancel_delayed_work_sync(&p_tas256x->init_work);
+#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
+		cancel_delayed_work_sync(&p_tas256x->dc_work);
+#endif
+	}
 	return n_result;
 }
 
 static int tas256x_i2c_remove(struct i2c_client *p_client)
 {
-	int i = 0;
 	struct tas256x_priv *p_tas256x = i2c_get_clientdata(p_client);
-	struct linux_platform *plat_data = NULL;
+	struct linux_platform *plat = p_tas256x->platform_data;
+	int i;
 
-	plat_data = (struct linux_platform *) p_tas256x->platform_data;
-	dev_info(plat_data->dev, "%s\n", __func__);
-
-	/*Cancel all the work routine before exiting*/
+	mutex_lock(&plat->irq_lock);
+	WRITE_ONCE(plat->stopping, true);
+	mutex_unlock(&plat->irq_lock);
+#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
+	register_tas256x_reset_func(NULL, NULL);
+	g_p_tas256x = NULL;
+#endif
+	for (i = 0; i < p_tas256x->mn_channels; i++)
+		if (plat->irq_requested[i])
+			free_irq(p_tas256x->devs[i]->mn_irq, p_tas256x);
 	cancel_delayed_work_sync(&p_tas256x->irq_work);
 	cancel_delayed_work_sync(&p_tas256x->init_work);
+#if IS_ENABLED(CONFIG_TAS25XX_ALGO) && IS_ENABLED(CONFIG_PLATFORM_QCOM)
 	cancel_delayed_work_sync(&p_tas256x->dc_work);
-
+#endif
 #if IS_ENABLED(CONFIG_TAS256X_CODEC)
 	tas256x_deregister_codec(p_tas256x);
-	mutex_destroy(&p_tas256x->codec_lock);
 #endif
-
-#if IS_ENABLED(CONFIG_TAS256X_MISC)
-	tas256x_deregister_misc(p_tas256x);
-	mutex_destroy(&p_tas256x->file_lock);
-#endif
-
-	mutex_destroy(&p_tas256x->dev_lock);
-
-	for (i = 0; i < p_tas256x->mn_channels; i++) {
-		if (gpio_is_valid(p_tas256x->devs[i]->mn_reset_gpio))
-			gpio_free(p_tas256x->devs[i]->mn_reset_gpio);
-		if (gpio_is_valid(p_tas256x->devs[i]->mn_irq_gpio))
-			gpio_free(p_tas256x->devs[i]->mn_irq_gpio);
-	}
-
-
 	return 0;
 }
 

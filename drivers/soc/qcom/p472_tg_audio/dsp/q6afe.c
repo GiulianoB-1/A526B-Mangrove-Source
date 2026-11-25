@@ -7572,11 +7572,15 @@ int afe_start_pseudo_port(u16 port_id)
 /*For DC Detection*/
 void (*tas256x_sw_reset)(void *data);
 dc_detection_data_t *s_dc_detect;
+static DEFINE_SPINLOCK(p487_dc_lock);
 void register_tas256x_reset_func(void *fptr, dc_detection_data_t *data)
 {
-	pr_err("[TI-SmartPA:%s] ", __func__);
+	unsigned long flags;
+
+	spin_lock_irqsave(&p487_dc_lock, flags);
 	tas256x_sw_reset = fptr;
 	s_dc_detect = data;
+	spin_unlock_irqrestore(&p487_dc_lock, flags);
 }
 
 void afe_tas_smartamp_init(uint32_t module_id_rx, uint32_t module_id_tx)
@@ -7595,6 +7599,8 @@ static int32_t tas_smartamp_algo_callback(uint32_t opcode, uint32_t *payload,
 
 	pr_debug("[TI-SmartPA:%s] ", __func__);
 	memset(&param_hdr, 0, sizeof(param_hdr));
+	if (!payload || payload_size < 4 * sizeof(u32))
+		return -EINVAL;
 	switch (opcode) {
 	case AFE_PORT_CMDRSP_GET_PARAM_V2:
 		param_hdr.module_id = payload[1];
@@ -7604,6 +7610,8 @@ static int32_t tas_smartamp_algo_callback(uint32_t opcode, uint32_t *payload,
 		data_start = &payload[4];
 		break;
 	case AFE_PORT_CMDRSP_GET_PARAM_V3:
+		if (payload_size < 5 * sizeof(u32))
+			return -EINVAL;
 		memcpy(&param_hdr, &payload[1], sizeof(struct param_hdr_v3));
 		data_start = &payload[5];
 		break;
@@ -7611,14 +7619,23 @@ static int32_t tas_smartamp_algo_callback(uint32_t opcode, uint32_t *payload,
 		pr_err("[TI-SmartPA:%s] Unrecognized command %d\n", __func__, opcode);
 		return -EINVAL;
 	}
+	if (param_hdr.param_size > payload_size - ((u8 *)data_start - (u8 *)payload) ||
+	    param_hdr.param_size > sizeof(this_afe.tas_calib_data.res_cfg.payload))
+		return -EINVAL;
+	memset(&this_afe.tas_calib_data, 0, sizeof(this_afe.tas_calib_data));
 	data_dest = (u32 *) &this_afe.tas_calib_data;
 	data_dest[0] = payload[0];
 	memcpy(&data_dest[1], &param_hdr, sizeof(struct param_hdr_v3));
 	memcpy(&data_dest[5], data_start, param_hdr.param_size);
-	if (param_hdr.param_id == CAPI_V2_TAS_SA_DC_DETECT) {
-		pr_err("[TI-SmartPA:%s] Detected DC, Calling TAS256X Software Reset\n", __func__);
-		s_dc_detect->channel = this_afe.tas_calib_data.res_cfg.payload[0];
-		tas256x_sw_reset(s_dc_detect);
+	if (!payload[0] && param_hdr.param_id == CAPI_V2_TAS_SA_DC_DETECT &&
+	    param_hdr.param_size >= sizeof(u32)) {
+		unsigned long flags;
+		spin_lock_irqsave(&p487_dc_lock, flags);
+		if (s_dc_detect && tas256x_sw_reset) {
+			WRITE_ONCE(s_dc_detect->channel, this_afe.tas_calib_data.res_cfg.payload[0]);
+			tas256x_sw_reset(s_dc_detect);
+		}
+		spin_unlock_irqrestore(&p487_dc_lock, flags);
 	}
 	if (!data_dest[0]) {
 		atomic_set(&this_afe.state, 0);
@@ -7636,7 +7653,7 @@ int afe_tas_smartamp_get_calib_data(uint32_t module_id, uint32_t param_id,
 	struct param_hdr_v3 param_hdr;
 	uint32_t port = 0x0;
 
-	if (!data || length <= 0) {
+	if (!data || length <= 0 || length > sizeof(this_afe.tas_calib_data.res_cfg)) {
 		pr_err("[TI-SmartPA:%s] Invalid params, length: %d\n",
 			__func__, length);
 		goto fail_cmd;
@@ -7645,7 +7662,7 @@ int afe_tas_smartamp_get_calib_data(uint32_t module_id, uint32_t param_id,
 	pr_info("[TI-SmartPA:%s] module id : 0x%x ", __func__, module_id);
 	if (module_id == this_afe.tas_module_rx) {
 		port = port_id;
-	} else if (module_id == this_afe.tas_module_rx) {
+	} else if (module_id == this_afe.tas_module_tx) {
 		port = port_id + 1;
 	} else {
 		pr_err("[TI-SmartPA:%s] invalid module id %d\n", module_id);
