@@ -43,4 +43,32 @@ static inline int p487_tas_parse_re(const char *s, size_t n, u32 *out)
 	*out = (u32)q;
 	return 0;
 }
+/* Decimal unsigned temperature; accept the TG NUL padding, reject junk. */
+static inline int p487_tas_parse_temp(const char *s, size_t n, u32 *out)
+{
+	size_t i = 0, start;
+	u32 value = 0, digit;
+
+	if (i < n && s[i] == '+')
+		i++;
+	start = i;
+	while (i < n && s[i] >= '0' && s[i] <= '9') {
+		digit = s[i++] - '0';
+		if (value > (0xffffffffU - digit) / 10)
+			return -ERANGE;
+		value = value * 10 + digit;
+	}
+	if (i == start)
+		return -EINVAL;
+	for (; i < n; i++)
+		if (s[i] != '\0' && s[i] != '\n')
+			return -EINVAL;
+	*out = value;
+	return 0;
+}
+/* Q19 was truncated when encoded; round to nearest hundredth for display. */
+static inline u32 p487_tas_re_hundredths(u32 re)
+{
+	return (u32)(((u64)re * 100 + (1U << 18)) >> 19);
+}
 #endif

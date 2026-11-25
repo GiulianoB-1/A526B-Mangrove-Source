@@ -109,7 +109,7 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 		}
 		calib_data[ret] = '\0';
 		if ((rdc_temp_l_r == TEMP_L) || (rdc_temp_l_r == TEMP_R)) {
-			ret = kstrtouint(calib_data, 10, data);
+			ret = p487_tas_parse_temp(calib_data, ret, data);
 			if (ret) {
 				pr_err("[TI-SmartPA:%s] file %s read error\n",
 					__func__, fname);
@@ -232,7 +232,7 @@ int tas25xx_check_limits(uint8_t channel, int32_t rdc)
 }
 
 /* Report actual EFS reads and DSP SET replies, not merely a cached file. */
-int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS])
+int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS], u32 temp[MAX_CHANNELS])
 {
 	struct tas25xx_algo *algo = smartamp_get_sysfs_ptr();
 	u32 calib_re[MAX_CHANNELS] = {0}, amb_temp[MAX_CHANNELS] = {0};
@@ -240,6 +240,7 @@ int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS])
 	int iter, ret;
 
 	memset(re, 0, sizeof(u32) * MAX_CHANNELS);
+	memset(temp, 0, sizeof(u32) * MAX_CHANNELS);
 	if (IS_ERR(algo))
 		return PTR_ERR(algo);
 	if (algo->spk_count != 2)
@@ -272,6 +273,7 @@ int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS])
 	}
 	for (iter = 0; iter < algo->spk_count; iter++) {
 		algo->calib_re[iter] = calib_re[iter];
+		temp[iter] = amb_temp[iter];
 		algo->amb_temp[iter] = amb_temp[iter];
 		algo->calib_update[iter] = true;
 		re[iter] = calib_re[iter];

@@ -159,7 +159,7 @@ void tas_smartamp_kbin_deinitalize(void);
 #endif /* CONFIG_TISA_KBIN_INTF */
 
 #if IS_ENABLED(CONFIG_TAS25XX_CALIB_VAL_BIG) || IS_ENABLED(CONFIG_TISA_DEBUGFS_INTF)
-int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS]);
+int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS], u32 temp[MAX_CHANNELS]);
 #endif
 
 #if IS_ENABLED(CONFIG_TAS25XX_CALIB_VAL_BIG)

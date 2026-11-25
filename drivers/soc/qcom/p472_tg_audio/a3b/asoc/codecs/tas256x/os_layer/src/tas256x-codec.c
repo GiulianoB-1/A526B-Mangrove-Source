@@ -50,6 +50,7 @@
 #include "algo/inc/tas_smart_amp_v2.h"
 #include "algo/inc/tas25xx-calib.h"
 #include <linux/a52_tas_iv.h>
+#include "algo/src/p487-re-parser.h"
 #endif /*CONFIG_TAS25XX_ALGO*/
 
 #define TAS256X_MDELAY 0xFFFFFFFE
@@ -561,7 +562,8 @@ static int tas256x_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 
 			{
 			/* Keep the TG order; check each real result. */
-			u32 re[MAX_CHANNELS] = {0};
+			u32 re[MAX_CHANNELS] = {0}, temp[MAX_CHANNELS] = {0};
+			u32 left_ohm100, right_ohm100;
 			int rc, shutdown_rc = 0, i;
 			bool iv_started;
 			unsigned int ch = p_tas256x->devs[0]->spk_control;
@@ -575,14 +577,18 @@ static int tas256x_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 				pr_err("P487 TAS IV_PORT missing acknowledged START; TG log-only\n");
 			rc = tas25xx_send_channel_mapping();
 			if (!rc)
-				rc = tas25xx_send_algo_calibration(re);
+				rc = tas25xx_send_algo_calibration(re, temp);
 			if (!rc && !tas25xx_set_iv_bit_fomat(
 				p_tas256x->curr_mn_iv_width,
 				p_tas256x->curr_mn_vbat, 1))
 				rc = -EIO;
-			pr_info("P487 TAS STREAM ch=%u algo=%s calib_valid=%u re_left=%u re_right=%u iv_port=0x1017 rc=%d\n",
-				ch, rc ? "param_failed" : "param_ack",
-				!rc, re[0], re[1], rc);
+			left_ohm100 = p487_tas_re_hundredths(re[0]);
+			right_ohm100 = p487_tas_re_hundredths(re[1]);
+			pr_info("P487 TAS STREAM ch=%u algo=%s calib_valid=%u re_left=%u(%u.%02uohm) re_right=%u(%u.%02uohm) temp=%u/%u iv_port=0x1017 rc=%d\n",
+				ch, rc ? "param_failed" : "param_ack", !rc,
+				re[0], left_ohm100 / 100, left_ohm100 % 100,
+				re[1], right_ohm100 / 100, right_ohm100 % 100,
+				temp[0], temp[1], rc);
 			if (rc) {
 				tas25xx_algo_enable_common_controls(0);
 				/* 5.10 soc_pcm_prepare ignores digital_mute rc.
