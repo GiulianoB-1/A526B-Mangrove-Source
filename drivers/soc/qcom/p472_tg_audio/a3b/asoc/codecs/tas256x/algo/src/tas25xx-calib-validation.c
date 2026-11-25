@@ -83,11 +83,8 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 	loff_t pos = 0;
 	char calib_data[MAX_STRING] = {0};
 	uint32_t data_flt[2];
-	mm_segment_t fs;
 	int ret = 0;
 
-	fs = get_fs();
-	set_fs(get_ds());
 
 	if (rdc_temp_l_r == TEMP_L)
 		memcpy(fname, TAS25XX_EFS_TEMP_DATA_L,
@@ -105,7 +102,12 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 	pf = filp_open(fname, O_RDONLY, 0666);
 
 	if (!IS_ERR(pf)) {
-		vfs_read(pf, calib_data, MAX_STRING-1, &pos);
+		ret = kernel_read(pf, calib_data, MAX_STRING-1, &pos);
+		if (ret <= 0) {
+			filp_close(pf, NULL);
+			return ret < 0 ? ret : -ENODATA;
+		}
+		calib_data[ret] = '\0';
 		if ((rdc_temp_l_r == TEMP_L) || (rdc_temp_l_r == TEMP_R)) {
 			ret = kstrtouint(calib_data, 10, data);
 			if (ret) {
@@ -129,7 +131,6 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 			__func__, fname);
 		ret = -1;
 	}
-	set_fs(fs);
 	return ret;
 }
 
@@ -316,7 +317,7 @@ static int tas25xx_save_calib_data(uint32_t *calib_rdc)
 
 /**********Calibration Related Codes Start*************************************/
 /* Forward declerations */
-static ssize_t calibration_store(struct device *dev,
+static __maybe_unused ssize_t calibration_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t size);
 
@@ -412,8 +413,8 @@ static void calib_work_routine(struct work_struct *work)
 	calibration_status = 0;
 }
 
-static DEVICE_ATTR(calibration, 0664, calibration_show,
-				calibration_store);
+static DEVICE_ATTR(calibration, 0444, calibration_show,
+				NULL);
 
 static DEVICE_ATTR(cstatus, 0664, calibration_status_show,
 				NULL);
@@ -433,7 +434,7 @@ static DEVICE_ATTR(rdc_r, 0664, calibration_rdc_show,
 static DEVICE_ATTR(temp_r, 0664, calibration_amb_temp_show,
 				NULL);
 
-static ssize_t calibration_store(struct device *dev,
+static __maybe_unused ssize_t calibration_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t size)
 {
@@ -599,7 +600,7 @@ static struct attribute_group tas25xx_calib_attr_grp = {
 /********************Calibration Related Codes End**************************/
 /********************Validation Related Codes Start**************************/
 /* Forward Declarations */
-static ssize_t validation_store(struct device *dev,
+static __maybe_unused ssize_t validation_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t size);
 
@@ -658,8 +659,8 @@ static void valid_work_routine(struct work_struct *work)
 	validation_running_status = 0;
 }
 
-static DEVICE_ATTR(validation, 0664, validation_show,
-				validation_store);
+static DEVICE_ATTR(validation, 0444, validation_show,
+				NULL);
 
 static DEVICE_ATTR(status, 0664, validation_status_show,
 				NULL);
@@ -667,7 +668,7 @@ static DEVICE_ATTR(status, 0664, validation_status_show,
 static DEVICE_ATTR(status_r, 0664, validation_status_show,
 				NULL);
 
-static ssize_t validation_store(struct device *dev,
+static __maybe_unused ssize_t validation_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t size)
 {

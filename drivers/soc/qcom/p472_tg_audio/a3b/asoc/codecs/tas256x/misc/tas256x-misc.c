@@ -149,6 +149,9 @@ static ssize_t tas256x_file_write(struct file *file,
 	unsigned int len = 0;
 	unsigned int channel = channel_left;
 
+	/* Staged port: raw register writes can defeat protection. */
+	return -EPERM;
+
 	mutex_lock(&p_tas256x->file_lock);
 
 	p_kbuf = kzalloc(count, GFP_KERNEL);

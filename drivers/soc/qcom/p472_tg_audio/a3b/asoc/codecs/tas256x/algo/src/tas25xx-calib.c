@@ -135,6 +135,9 @@ static ssize_t tas_calib_write(struct file *file,
 {
 	int rc = 0;
 
+	/* Staged port: arbitrary factory DSP writes are not authorized. */
+	return -EPERM;
+	/* Retain donor path for review; no runtime access. */
 	rc = smartamp_params_ctrl((uint8_t *)buffer, TAS_SET_PARAM, count);
 	return rc;
 }

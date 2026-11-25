@@ -625,7 +625,9 @@ static int tas256x_enum_put(struct snd_kcontrol *kcontrol,
 				ucontrol->value.integer.value[0],
 				channel_left);
 			/* Added to Support to Bypass Algorithm get/Set During RCV Mode */
-			p_tas256x->algo_bypass = ucontrol->value.integer.value[0];
+			if (!ret)
+				if (!ret)
+				p_tas256x->algo_bypass = ucontrol->value.integer.value[0];
 		} else {
 			dev_err(plat_data->dev, "Invalid Control %s\n",
 				ucontrol->id.name);

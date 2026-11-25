@@ -34,3 +34,11 @@ Pinned TG overlay: arch/arm64/boot/dts/samsung/a52/a52xq/a52xq_eur_open_w00_r02.
 - Earpiece channel/route still requires exact ROM mixer_paths XML, not an assumption from left/right addresses.
 
 The native build for source commit 064302423ffbfbc425cb04c628fda077f9f18270 is run 45632533043; preflight passed at the time of inspection, compile underway. This documentation-only supplement does not change the built source or trigger another native build.
+
+## Mixer-path addendum (ROM lines supplied 2026-11-25)
+
+LEFT 0x4d upper receiver/top speaker; RIGHT 0x4c bottom speaker. HAL handset uses receiver enable + left ASI switch, output level 0, playback volume 47. WCD ear path is headphone. HAL sets RX/TX Two, S24_LE, VI feedback via MultiMedia2 Mixer QUIN_MI2S_TX=1. No route change yet. Addendum enumerates 14 distinct requested names (not 15); TG includes additional RECEIVER ENABLE RIGHT. Keep real donor names. Do not fabricate a fifteenth HAL-required control.
+
+TG exact receiver routine, book/page/reg sequence (hex): 00/fd/0d=0d both; fd/12=c0 vs 00; fd/47=04 vs 00; fd/64=14 vs 10; fd/46=1f vs 1d; fd/3f=01 vs 21; fd/0c=00 vs 01; fd/44=fc vs dc; 00/00/04=ca vs cf; 00/00/3e=00 on receiver vs mask 02 value 00 then ICN switch update on speaker restoration. TG explicitly bypasses smartamp algo/IV sensing in receiver mode, not speaker mode. Amp gain step 0 writes mask 0x3e, value 0; volume 47 uses TG dvc_pcm table. No physical changes made to receiver sequence; add actual return-code trace. Set algo_bypass only after successful receiver write sequence.
+
+All 27 pinned donor files imported, donor external build files saved as .tg. Compile-only Kconfig uses exact real global CONFIG names, no parent Makefile linkage. Replace removed set_fs/vfs_read with kernel_read, preserve read-only EFS, make factory calibration/validation sysfs read-only, reject arbitrary misc DSP/raw register writes in this stage. Those blanket write blocks require later HAL ABI review; no claim of final runtime integration. Real Samsung bigdata provider not ported; callback source imported, not built against fallback stubs. Separate object CI checks TG names and enum strings, including generated DAPM switch name components, but not runtime registration. QUIN remains filtered. No TAS STREAM success marker until actual algorithm/IV/calibration result available. No flash.

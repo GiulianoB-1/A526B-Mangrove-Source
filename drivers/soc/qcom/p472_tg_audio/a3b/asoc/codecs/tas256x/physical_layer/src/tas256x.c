@@ -1735,6 +1735,8 @@ int tas256x_enable_receiver_mode(struct tas256x_priv *p_tas256x, int enable,
 	if (n_result == 0)
 		p_tas256x->devs[ch-1]->receiver_enable = enable;
 
+	pr_info_ratelimited("P487 TAS RECEIVER ENABLE ch=%d enable=%d rc=%d\n",
+		ch, enable, n_result);
 	return n_result;
 }
 

@@ -272,3 +272,7 @@ config P480_A3C
     help
       A3c only. Build pinned 5.4/5.10 ASoC providers and real Kona.
       No WSA, TAS256x or voice. Does not change P479 charging/H0.
+
+# P487 TAS compile-only symbols. The parent Makefile deliberately does not
+# link these objects until protection, live DT and card integration pass review.
+source "drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x/Kconfig"

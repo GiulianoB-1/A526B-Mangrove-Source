@@ -1,0 +1,39 @@
+name: P487 TAS native object review (NO FLASH)
+on:
+  push:
+    branches: ['feature/p487-tas-autostart']
+    paths:
+      - 'drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x/**'
+      - 'ci/p487_tas_object_audit.py'
+      - '.github/workflows/p487-tas-objects.yml'
+permissions:
+  contents: read
+concurrency:
+  group: p487-tas-objects-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compile isolated real TAS codec objects (no Image)
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
+          mkdir -p out_TAS
+          cp ci/build.config out_TAS/.config
+          scripts/config --file out_TAS/.config -e COMPILE_TEST -e SND_SOC_TAS256x
+          args=(O="$PWD/out_TAS" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1)
+          make "${args[@]}" olddefconfig
+          for flag in SND_SOC_TAS256x TAS256X_REGMAP TAS256X_CODEC TAS25XX_ALGO PLATFORM_QCOM TAS256X_MISC TAS25XX_CALIB_VAL_BIG; do
+            grep -Fxq "CONFIG_${flag}=y" out_TAS/.config
+          done
+          dir=drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x
+          make "${args[@]}" -j"$(nproc)" "$dir/os_layer/src/tas256x-codec.o" "$dir/os_layer/src/tas256x-regmap.o" "$dir/physical_layer/src/tas256x.o" "$dir/logical_layer/src/tas256x-logic.o" "$dir/algo/src/tas25xx-algo-common.o" "$dir/algo/src/tas25xx-calib.o" "$dir/algo/src/tas25xx-algo-intf.o" "$dir/algo/platform/qcom/tas25xx-algo-qdsp-intf.o" "$dir/misc/tas256x-misc.o" "$dir/algo/src/tas25xx-calib-validation.o"
+          python3 ci/p487_tas_object_audit.py "out_TAS/$dir"
+          test ! -e out_TAS/arch/arm64/boot/Image
