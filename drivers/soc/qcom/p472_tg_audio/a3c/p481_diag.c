@@ -4,7 +4,7 @@
 #include <linux/init.h>
 #include <linux/jiffies.h>
 #include <linux/kobject.h>
-#include <dsp/q6core.h>
+#include <ipc/apr.h>
 #include <linux/sysfs.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
@@ -21,7 +21,7 @@ static DEFINE_MUTEX(p481_lock);
 static bool card_attempted;
 static bool card_enable = true;
 static unsigned int bolero_guard = 1;
-static unsigned int auto_checks;
+static bool p486_auto_started;
 
 unsigned int p483_bolero_guard(void)
 {
@@ -175,28 +175,37 @@ static int p483_register_card(void)
 }
 
 static void p483_auto_work(struct work_struct *work);
-static DECLARE_DELAYED_WORK(p483_card_job, p483_auto_work);
+static DECLARE_WORK(p483_card_job, p483_auto_work);
 
 static void p483_auto_work(struct work_struct *work)
 {
 	if (!READ_ONCE(card_enable) || READ_ONCE(card_attempted))
 		return;
-	/* Never register a machine when recovery skipped ADSP startup. */
-	if (!q6core_is_adsp_ready()) {
-		if (++auto_checks < 60)
-			schedule_delayed_work(&p483_card_job, HZ);
-		else
-			pr_err("P483 CARD_AUTO skipped reason=adsp_not_ready\n");
+	/* APR LOADED is gated by the real transport GET_STATE response. */
+	if (apr_get_q6_state() != APR_SUBSYS_LOADED)
 		return;
-	}
 	pr_info("P483 CARD_AUTO adsp_ready=1\n");
+	pr_info("P486 CARD_AUTO source=apr_loaded\n");
 	p483_register_card();
+}
+
+/* Called after the genuine APR UP event; never register in the callback. */
+void p486_card_adsp_up(void)
+{
+	if (READ_ONCE(p486_auto_started) && READ_ONCE(card_enable) &&
+	    !READ_ONCE(card_attempted))
+		schedule_work(&p483_card_job);
 }
 
 void p483_card_auto_start(void)
 {
-	if (READ_ONCE(card_enable))
-		schedule_delayed_work(&p483_card_job, 0);
+	/* Publish initialization before sampling readiness, so a prior UP
+	 * event is caught by the state check and a later one by the hook.
+	 */
+	WRITE_ONCE(p486_auto_started, true);
+	smp_mb();
+	if (apr_get_q6_state() == APR_SUBSYS_LOADED)
+		p486_card_adsp_up();
 }
 
 static ssize_t card_enable_show(struct kobject *kobj,
@@ -221,9 +230,9 @@ static ssize_t card_enable_store(struct kobject *kobj,
 	WRITE_ONCE(card_enable, !!val);
 	mutex_unlock(&p481_lock);
 	if (val)
-		mod_delayed_work(system_wq, &p483_card_job, 0);
+		p486_card_adsp_up();
 	else
-		cancel_delayed_work_sync(&p483_card_job);
+		cancel_work_sync(&p483_card_job);
 	return count;
 }
 static struct kobj_attribute card_enable_attr = __ATTR_RW(card_enable);

@@ -7,6 +7,7 @@ could run calibration/Q6/platform/machine binding at device_initcall.
 import json
 import re
 from pathlib import Path
+from p486_apr_ready_audit import audit_apr_card_ready
 
 root = Path(__file__).resolve().parents[1]
 a3c = root / "drivers/soc/qcom/p472_tg_audio/a3c"
@@ -45,7 +46,7 @@ assert "int __init p480_kona_machine_init(void)" not in machine
 assert "p480_kona_machine_init(" not in a3a
 assert "rc = p480_kona_machine_init();" in diag
 assert "__ATTR_RW(card_enable)" in diag
-assert "q6core_is_adsp_ready()" in diag
+assert audit_apr_card_ready(root)
 assert "a52_audio.card_enable=" in diag
 assert "p483_card_auto_start();" in a3a
 assert "return platform_driver_register(&msm_stub_driver)" in stub
@@ -71,7 +72,7 @@ report = {
     "baseline_a3a": {"file":"dsp/p472_a3a_q6_init.c", "level":"late_initcall_sync (7s)"},
     "a3c_registration_macros": entries,
     "a3c_platform": "explicit in A3a after q6lsm; no standalone initcall",
-    "a3c_machine": "automatic one-shot after providers and confirmed ADSP readiness; cmdline/sysfs recovery",
+    "a3c_machine": "automatic one-shot after providers and real APR GET_STATE/LOADED event; cmdline/sysfs recovery",
     "msm_stub": "device_initcall (6); registration-only stub codec, no cal/Q6 use",
     "total_a3c_c_files_scanned": len(list(a3c.rglob("*.c"))),
     "no_a3c_config": "All cal/A2a/A3a changes guarded by CONFIG_P480_A3C",

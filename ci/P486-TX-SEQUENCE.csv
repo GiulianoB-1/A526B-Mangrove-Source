@@ -1,0 +1,24 @@
+phase,step,TG_operation,P486_operation,P486_widget,conditions
+up,1,ANA_CLK_CTL mask08 val08,ANA_CLK_CTL mask08 val08,ADC1 REQ,ADC1
+up,2,ANA_CLK_CTL mask10 val10,ANA_CLK_CTL mask10 val10,ADC1 REQ,ADC1
+up,3,set status bit and compute rate,set status bit and compute rate,ADC1 REQ,ADC1
+up,4,connect ADC1,connect ADC1,ADC1 REQ,ADC1
+up,5,ANA_TX_CH2 mask40 val40,ANA_TX_CH2 mask40 val40,ADC1 REQ,ADC1
+up,6,TX_ANA_MODE_0_1 mask0f val mode,TX_ANA_MODE_0_1 mask0f val mode,ADC1 REQ,ADC1
+up,7,DIG_CLK_CTL mask10 val10,DIG_CLK_CTL mask10 val10,ADC1 REQ,ADC1
+up,8,ANA_TX_CH2 mask40 val00,ANA_TX_CH2 mask40 val00,ADC1 REQ,ADC1
+up,9,REQ_CTL mask02 val02,REQ_CTL mask02 val02,ADC1_MIXER,ADC1
+up,10,REQ_CTL mask01 val00,REQ_CTL mask01 val00,ADC1_MIXER,ADC1
+up,11,SWR_TX_CLK_RATE inactive bank,SWR_TX_CLK_RATE inactive bank,ADC1,rate from status
+up,12,datapath true,datapath true,ADC1,ADC1
+up,13,SWR_TX_CLK_RATE other bank,SWR_TX_CLK_RATE other bank,ADC1,rate from status
+down,1,TX_ANA_MODE_0_1 mask0f val00,TX_ANA_MODE_0_1 mask0f val00,ADC1,TG equal-rank stop assumed
+down,2,DIG_CLK_CTL mask10 val00,DIG_CLK_CTL mask10 val00,ADC1,TG equal-rank stop assumed
+down,3,disconnect ADC1,disconnect ADC1,ADC1,TG equal-rank stop assumed
+down,4,ANA_CLK_CTL mask08 val00,ANA_CLK_CTL mask08 val00,ADC1,TG equal-rank stop assumed
+down,5,clear ADC1 status bit,clear ADC1 status bit,ADC1,TG equal-rank stop assumed
+down,6,ANA_CLK_CTL mask10 val00,ANA_CLK_CTL mask10 val00,ADC1_MIXER,TG equal-rank stop assumed
+down,7,SWR_TX_CLK_RATE active bank,SWR_TX_CLK_RATE active bank,ADC1 REQ,TG equal-rank stop assumed
+down,8,datapath false,datapath false,ADC1 REQ,TG equal-rank stop assumed
+down,9,SWR_TX_CLK_RATE other bank,SWR_TX_CLK_RATE other bank,ADC1 REQ,TG equal-rank stop assumed
+down,10,clear ADC1 mode bit,clear ADC1 mode bit,ADC1 REQ,TG equal-rank stop assumed

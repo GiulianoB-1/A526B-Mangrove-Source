@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from p486_apr_ready_audit import audit_apr_card_ready
 
 
 def check(test: bool, message: str) -> None:
@@ -420,7 +421,7 @@ def main() -> None:
         check(any(name in line and why in line and "SOURCE_PREDICTION_ONLY" in line
                   for line in expected.splitlines()),
               "live-r02 source-only predicted MI2S skip: " + name)
-    check("MANGROVE-P485-A3C-HLT.boot.img" in package and
+    check("MANGROVE-P486-A3C-HLT.boot.img" in package and
           "P480-A3C-strings-proof.json" in package and
           "P480 A3c LINK_DIR_TRIM name=" in package and
           "P480 A3c ROUTES added=" in package and
@@ -443,11 +444,11 @@ def main() -> None:
           "UNPORTED_OR_VOICE_LINK" in kona_source,
           "P483 real CVD and control-only AUX without voice call PCM")
     check("static bool card_enable = true;" in diag and
-          "q6core_is_adsp_ready()" in diag and
+          audit_apr_card_ready(root) and
           'a52_audio.card_enable=' in diag and
           "static unsigned int bolero_guard = 1;" in diag and
           "mode == 2" in bolero and "P483 BOLERO_MACRO_INACTIVE_ALLOWED" in bolero,
-          "P483 automatic recovery-gated card and TG default guard")
+          "P486 real APR event recovery-gated card and TG default guard")
     print("P480 A3c source-only integration contracts PASS; no hardware validation")
 
 

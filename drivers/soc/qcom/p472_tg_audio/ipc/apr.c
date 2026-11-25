@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 #include <linux/ipc_logging.h>
 #include <linux/of_platform.h>
+#include <linux/p481_audio_diag.h>
 #include <soc/qcom/subsystem_restart.h>
 #include <soc/qcom/scm.h>
 #include <soc/snd_event.h>
@@ -327,6 +328,11 @@ static void apr_adsp_up(void)
 		schedule_work(&apr_priv->add_chld_dev_work);
 	spin_unlock(&apr_priv->apr_lock);
 	snd_event_notify(apr_priv->dev, SND_EVENT_UP);
+#ifdef CONFIG_P480_A3C
+	/* Real transport GET_STATE has permitted APR_SUBSYS_LOADED. */
+	smp_mb();
+	p486_card_adsp_up();
+#endif
 }
 
 int apr_load_adsp_image(void)
