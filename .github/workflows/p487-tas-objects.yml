@@ -1,7 +1,7 @@
 name: P487 TAS native object review (NO FLASH)
 on:
   push:
-    branches: ['feature/p487-tas-autostart']
+    branches: ['feature/p487-tas-autostart', 'feature/p487-tas-compile-review']
     paths:
       - 'drivers/soc/qcom/p472_tg_audio/a3b/asoc/codecs/tas256x/**'
       - 'ci/p487_tas_object_audit.py'
@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install -y clang lld llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
           mkdir -p out_TAS
           cp ci/build.config out_TAS/.config
-          scripts/config --file out_TAS/.config -e COMPILE_TEST -e SND_SOC_TAS256x
+          scripts/config --file out_TAS/.config -e COMPILE_TEST --keep-case -e SND_SOC_TAS256x
           args=(O="$PWD/out_TAS" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1)
           make "${args[@]}" olddefconfig
           for flag in SND_SOC_TAS256x TAS256X_REGMAP TAS256X_CODEC TAS25XX_ALGO PLATFORM_QCOM TAS256X_MISC TAS25XX_CALIB_VAL_BIG; do

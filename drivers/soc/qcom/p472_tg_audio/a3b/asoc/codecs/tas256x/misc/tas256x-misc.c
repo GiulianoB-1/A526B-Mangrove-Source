@@ -141,64 +141,8 @@ err:
 static ssize_t tas256x_file_write(struct file *file,
 	const char *buf, size_t count, loff_t *ppos)
 {
-	struct tas256x_priv *p_tas256x =
-		(struct tas256x_priv *)file->private_data;
-	int ret = 0;
-	unsigned char *p_kbuf = NULL;
-	unsigned int reg = 0;
-	unsigned int len = 0;
-	unsigned int channel = channel_left;
-
-	/* Staged port: raw register writes can defeat protection. */
+	/* Compile-only stage: factory DSP/raw register writes denied. */
 	return -EPERM;
-
-	mutex_lock(&p_tas256x->file_lock);
-
-	p_kbuf = kzalloc(count, GFP_KERNEL);
-	if (p_kbuf == NULL)
-		goto err;
-
-	ret = copy_from_user(p_kbuf, buf, count);
-	if (ret != 0) {
-		pr_err("TAS256X copy_from_user failed.\n");
-		goto err;
-	}
-
-	if ((p_kbuf[1] >= 0) && ((p_kbuf[1] <= 1)))
-		channel = p_kbuf[1]+1;
-	switch (p_kbuf[0]) {
-	case TIAUDIO_CMD_REG_WITE:
-		if (count > 5) {
-			reg = ((unsigned int)p_kbuf[2] << 24) +
-				((unsigned int)p_kbuf[3] << 16) +
-				((unsigned int)p_kbuf[4] << 8) +
-				(unsigned int)p_kbuf[5];
-			len = count - 6;
-			pr_info("TAS256X TIAUDIO_CMD_REG_WITE, Reg=0x%x, Val=0x%x\n",
-				reg, p_kbuf[6]);
-			if (len == 1) {
-				unsigned int value = 0;
-
-				value = p_kbuf[6];
-				ret = p_tas256x->write(p_tas256x, channel, reg,
-					value);
-			} else if (len > 1) {
-				ret = p_tas256x->bulk_write(p_tas256x, channel,
-					reg, &p_kbuf[6], len);
-			}
-		} else {
-			pr_err("TAS256X %s, write len fail, count=%d.\n",
-				__func__, (int)count);
-		}
-	break;
-	}
-err:
-	if (p_kbuf != NULL)
-		kfree(p_kbuf);
-
-	mutex_unlock(&p_tas256x->file_lock);
-
-	return count;
 }
 
 static const struct file_operations fops = {

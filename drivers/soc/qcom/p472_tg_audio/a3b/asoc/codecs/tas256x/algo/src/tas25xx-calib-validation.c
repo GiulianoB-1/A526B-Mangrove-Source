@@ -123,7 +123,8 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 					__func__, fname);
 				ret = -1;
 			}
-			*data = TRANSF_USER_TO_IMPED(data_flt[0], data_flt[1]);
+			if (ret == 2)
+				*data = TRANSF_USER_TO_IMPED(data_flt[0], data_flt[1]);
 		}
 		filp_close(pf, NULL);
 	} else {

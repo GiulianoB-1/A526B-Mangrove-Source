@@ -133,13 +133,8 @@ static int tas_calib_open(struct inode *inode, struct file *fd)
 static ssize_t tas_calib_write(struct file *file,
 		const char __user *buffer, size_t count, loff_t *offp)
 {
-	int rc = 0;
-
-	/* Staged port: arbitrary factory DSP writes are not authorized. */
+	/* Compile-only stage: factory DSP/raw register writes denied. */
 	return -EPERM;
-	/* Retain donor path for review; no runtime access. */
-	rc = smartamp_params_ctrl((uint8_t *)buffer, TAS_SET_PARAM, count);
-	return rc;
 }
 
 static ssize_t tas_calib_read(struct file *file, char __user *buffer,
