@@ -13,6 +13,8 @@
 #include <linux/soc/qcom/smem.h>
 #include <linux/soc/qcom/smem_state.h>
 #include <linux/remoteproc.h>
+#include <linux/string.h>
+#include <linux/of.h>
 #include "qcom_q6v5.h"
 
 #define Q6V5_PANIC_DELAY_MS	200
@@ -51,6 +53,27 @@ int qcom_q6v5_unprepare(struct qcom_q6v5 *q6v5)
 }
 EXPORT_SYMBOL_GPL(qcom_q6v5_unprepare);
 
+/* SMEM is length-delimited, not guaranteed NUL terminated. Print the
+ * complete actual modem SFR in bounded chunks, never read beyond SMEM.
+ * This is diagnostics only; crash classification and recovery are unchanged.
+ */
+static void p487_q6v5_log_reason(struct qcom_q6v5 *q6v5,
+				const char *kind, const char *msg, size_t len)
+{
+	size_t n = strnlen(msg, len), off;
+	int chunk;
+
+	for (off = 0; off < n; off += chunk) {
+		chunk = min_t(size_t, n - off, 240);
+		dev_err(q6v5->dev, "%s received: %.*s\n", kind, chunk, msg + off);
+		if (q6v5->dev->of_node &&
+		    of_device_is_compatible(q6v5->dev->of_node,
+					    "qcom,sm6350-mss-pas"))
+			dev_err(q6v5->dev, "P487 MSS SFR off=%zu len=%d total=%zu\n",
+				off, chunk, n);
+	}
+}
+
 static irqreturn_t q6v5_wdog_interrupt(int irq, void *data)
 {
 	struct qcom_q6v5 *q6v5 = data;
@@ -65,7 +88,7 @@ static irqreturn_t q6v5_wdog_interrupt(int irq, void *data)
 
 	msg = qcom_smem_get(QCOM_SMEM_HOST_ANY, q6v5->crash_reason, &len);
 	if (!IS_ERR(msg) && len > 0 && msg[0])
-		dev_err(q6v5->dev, "watchdog received: %s\n", msg);
+		p487_q6v5_log_reason(q6v5, "watchdog", msg, len);
 	else
 		dev_err(q6v5->dev, "watchdog without message\n");
 
@@ -82,7 +105,7 @@ static irqreturn_t q6v5_fatal_interrupt(int irq, void *data)
 
 	msg = qcom_smem_get(QCOM_SMEM_HOST_ANY, q6v5->crash_reason, &len);
 	if (!IS_ERR(msg) && len > 0 && msg[0])
-		dev_err(q6v5->dev, "fatal error received: %s\n", msg);
+		p487_q6v5_log_reason(q6v5, "fatal error", msg, len);
 	else
 		dev_err(q6v5->dev, "fatal error without message\n");
 

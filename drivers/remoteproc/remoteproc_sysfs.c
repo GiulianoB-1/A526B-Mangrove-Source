@@ -6,6 +6,9 @@
 #include <linux/remoteproc.h>
 #include <linux/a52_autostart.h>
 #include <linux/slab.h>
+#include <linux/capability.h>
+#include <linux/init.h>
+#include <linux/of.h>
 #include <trace/hooks/remoteproc.h>
 
 #include "remoteproc_internal.h"
@@ -275,16 +278,83 @@ static ssize_t name_show(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RO(name);
 
+/* Deliberate one-shot software recovery test, not a real modem fatal IRQ.
+ * Hidden unless enabled by cmdline, restricted to the actual SM6350 MSS.
+ * This does not bypass P469 fatal-window/recovery policy or force PAS calls.
+ */
+static bool p487_mss_ssr_test;
+static atomic_t p487_mss_test_used = ATOMIC_INIT(0);
+
+static int __init p487_mss_ssr_test_setup(char *str)
+{
+	return kstrtobool(str, &p487_mss_ssr_test) ? 0 : 1;
+}
+__setup("a52.mss_ssr_test=", p487_mss_ssr_test_setup);
+
+static bool p487_mss_test_target(struct rproc *rproc)
+{
+	return rproc->dev.parent && rproc->dev.parent->of_node &&
+		of_machine_is_compatible("qcom,lagoon") &&
+		of_device_is_compatible(rproc->dev.parent->of_node,
+					"qcom,sm6350-mss-pas");
+}
+
+static ssize_t mss_ssr_test_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct rproc *rproc = to_rproc(dev);
+	int rc;
+
+	if (!p487_mss_ssr_test || !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	if (!p487_mss_test_target(rproc))
+		return -ENODEV;
+	if (!sysfs_streq(buf, "1"))
+		return -EINVAL;
+	rc = mutex_lock_interruptible(&rproc->lock);
+	if (rc)
+		return rc;
+	if (rproc->state != RPROC_RUNNING ||
+	    READ_ONCE(rproc->recovery_disabled)) {
+		rc = -EBUSY;
+		goto out;
+	}
+	if (atomic_cmpxchg(&p487_mss_test_used, 0, 1)) {
+		rc = -EALREADY;
+		goto out;
+	}
+	dev_warn(dev, "P487 MSS SSR_TEST software_watchdog_report=1 queued_only=1\n");
+	rproc_report_crash(rproc, RPROC_WATCHDOG);
+	rc = 0;
+out:
+	mutex_unlock(&rproc->lock);
+	return rc ? rc : count;
+}
+static DEVICE_ATTR_WO(mss_ssr_test);
+
+static umode_t p487_rproc_attr_visible(struct kobject *kobj,
+				       struct attribute *attr, int idx)
+{
+	if (attr == &dev_attr_mss_ssr_test.attr &&
+	    (!p487_mss_ssr_test ||
+	     !p487_mss_test_target(to_rproc(kobj_to_dev(kobj)))))
+		return 0;
+	return attr->mode;
+}
+
 static struct attribute *rproc_attrs[] = {
 	&dev_attr_coredump.attr,
 	&dev_attr_recovery.attr,
 	&dev_attr_firmware.attr,
 	&dev_attr_state.attr,
 	&dev_attr_name.attr,
+	&dev_attr_mss_ssr_test.attr,
 	NULL
 };
 
 static const struct attribute_group rproc_devgroup = {
+	.is_visible = p487_rproc_attr_visible,
 	.attrs = rproc_attrs
 };
 
