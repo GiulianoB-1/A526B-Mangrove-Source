@@ -691,7 +691,7 @@ static void notify_each_subsys_device(struct subsys_device **list,
 		trace_pil_notif("before_send_notif", notif, dev->desc->fw_name);
 		setup_timeout(dev->desc, NULL, SUBSYS_TO_HLOS);
 		if (!strcmp(dev->desc->name, "modem"))
-			pr_info("P487 NOTIF legacy name=modem handle=%px event=%d\n",
+			pr_info("P487 NOTIF legacy name=modem handle=%p event=%d\n",
 				dev->notify, notif);
 		subsys_notif_queue_notification(dev->notify, notif,
 								&notif_data);

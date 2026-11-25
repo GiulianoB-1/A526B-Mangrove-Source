@@ -5266,7 +5266,7 @@ void ipa3_wwan_cleanup(void)
 {
 	int ret;
 
-	pr_info("P487 RMNET WWAN_CLEANUP caller=%pS local_handle=%px\n",
+	pr_info("P487 RMNET WWAN_CLEANUP caller=%pS local_handle=%p\n",
 		__builtin_return_address(0),
 		rmnet_ipa3_ctx->lcl_mdm_subsys_notify_handle);
 	platform_driver_unregister(&rmnet_ipa_driver);

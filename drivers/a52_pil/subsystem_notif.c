@@ -88,7 +88,7 @@ void *subsys_notif_register_notifier(
 
 		if (IS_ERR_OR_NULL(subsys)) {
 			ret = IS_ERR(subsys) ? PTR_ERR(subsys) : -EINVAL;
-			pr_info("P487 NOTIF reg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+			pr_info("P487 NOTIF reg name=%s handle=%p nb=%ps rc=%d caller=%pS\n",
 				subsys_name, subsys, nb->notifier_call, ret,
 				__builtin_return_address(0));
 			return ERR_PTR(ret);
@@ -97,7 +97,7 @@ void *subsys_notif_register_notifier(
 
 	ret = srcu_notifier_chain_register(
 		&subsys->subsys_notif_rcvr_list, nb);
-	pr_info("P487 NOTIF reg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+	pr_info("P487 NOTIF reg name=%s handle=%p nb=%ps rc=%d caller=%pS\n",
 		subsys_name, subsys, nb->notifier_call, ret,
 		__builtin_return_address(0));
 
@@ -120,7 +120,7 @@ int subsys_notif_unregister_notifier(void *subsys_handle,
 
 	ret = srcu_notifier_chain_unregister(
 		&subsys->subsys_notif_rcvr_list, nb);
-	pr_info("P487 NOTIF unreg name=%s handle=%px nb=%ps rc=%d caller=%pS\n",
+	pr_info("P487 NOTIF unreg name=%s handle=%p nb=%ps rc=%d caller=%pS\n",
 		subsys->name, subsys, nb->notifier_call, ret,
 		__builtin_return_address(0));
 
@@ -311,13 +311,13 @@ int subsys_notif_queue_notification(void *subsys_handle,
 		}
 		truncated |= !!nb;
 		srcu_read_unlock(&head->srcu, idx);
-		pr_info("P487 NOTIF begin name=%s handle=%px event=%d n_rcvr=%d rcvrs=%s truncated=%d caller=%pS\n",
+		pr_info("P487 NOTIF begin name=%s handle=%p event=%d n_rcvr=%d rcvrs=%s truncated=%d caller=%pS\n",
 			subsys->name, subsys, notif_type, n_rcvr,
 			rcvrs, truncated, __builtin_return_address(0));
 	}
 	rc = srcu_notifier_call_chain(head, notif_type, data);
 	if (trace)
-		pr_info("P487 NOTIF call name=%s handle=%px event=%d n_rcvr=%d rcvrs=%s rc=%d truncated=%d caller=%pS\n",
+		pr_info("P487 NOTIF call name=%s handle=%p event=%d n_rcvr=%d rcvrs=%s rc=%d truncated=%d caller=%pS\n",
 			subsys->name, subsys, notif_type, n_rcvr, rcvrs, rc,
 			truncated, __builtin_return_address(0));
 	return rc;
