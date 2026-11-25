@@ -90,6 +90,7 @@ struct qcom_adsp {
 	struct qcom_rproc_glink glink_subdev;
 	struct qcom_rproc_subdev smd_subdev;
 	struct qcom_rproc_ssr ssr_subdev;
+	struct rproc_subdev *p487_mss_sync_subdev;
 	struct qcom_sysmon *sysmon;
 };
 
@@ -609,9 +610,17 @@ static int adsp_probe(struct platform_device *pdev)
 		goto detach_proxy_pds;
 	}
 
+	adsp->p487_mss_sync_subdev = a52_p487_mss_sync_attach(rproc);
+	if (IS_ERR(adsp->p487_mss_sync_subdev)) {
+		dev_err(&pdev->dev, "P487 MSS sync bridge attach failed rc=%ld; async retained\n",
+			PTR_ERR(adsp->p487_mss_sync_subdev));
+		adsp->p487_mss_sync_subdev = NULL;
+	}
 	ret = rproc_add(rproc);
-	if (ret)
+	if (ret) {
+		a52_p487_mss_sync_detach(rproc, adsp->p487_mss_sync_subdev);
 		goto detach_proxy_pds;
+	}
 
     if (desc->a52_mss_rails) {
         /* A6b: P468B char shim is optional, PAS rproc stays alive if ABI
@@ -718,6 +727,7 @@ static int adsp_remove(struct platform_device *pdev)
 	a52_p470_ssr_desc_free(adsp->a52_modem_ssr_desc);
 	adsp->a52_modem_ssr_desc = NULL;
 	rproc_del(adsp->rproc);
+	a52_p487_mss_sync_detach(adsp->rproc, adsp->p487_mss_sync_subdev);
 
 	qcom_remove_glink_subdev(adsp->rproc, &adsp->glink_subdev);
 	qcom_remove_sysmon_subdev(adsp->sysmon);

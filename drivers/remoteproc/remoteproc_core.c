@@ -31,6 +31,7 @@
 #include <linux/rculist.h>
 #include <linux/remoteproc.h>
 #include <linux/a52_autostart.h>
+#include <linux/a52_p470_mss_notif.h>
 #include <linux/of.h>
 #include <linux/sched.h>
 #include <linux/workqueue.h>
@@ -95,6 +96,127 @@ static bool a52_p469_is_mss(struct rproc *rproc);
 static struct task_struct *p470_mss_legacy_task;
 static struct workqueue_struct *p470_mss_notif_wq;
 
+/* Review-only synchronous bridge. Default off until the transitive
+ * consumer lock audit is complete. No change to the legacy wrapper.
+ */
+static bool p487_mss_sync_ssr;
+static struct rproc *p487_mss_sync_owner;
+
+static int __init p487_mss_sync_setup(char *s)
+{
+	return kstrtobool(s, &p487_mss_sync_ssr) ? 0 : 1;
+}
+__setup("a52.mss_sync_ssr=", p487_mss_sync_setup);
+
+struct p487_mss_sync {
+	struct rproc_subdev subdev;
+	struct rproc *rproc;
+	void *handle;
+	bool stopped;
+	bool crashed;
+};
+
+static bool p487_mss_sync_legacy(void)
+{
+	return READ_ONCE(p470_mss_legacy_task) == current;
+}
+
+static void p487_mss_sync_notify(struct p487_mss_sync *s,
+				enum subsys_notif_type event, bool crashed)
+{
+	struct notif_data data = { 0 };
+	int rc;
+
+	if (p487_mss_sync_legacy())
+		return;
+	data.crashed = crashed ? CRASH_STATUS_ERR_FATAL : CRASH_STATUS_NO_CRASH;
+	data.enable_ramdump = 0;
+	data.pdev = to_platform_device(s->rproc->dev.parent);
+	rc = subsys_notif_queue_notification(s->handle, event, &data);
+	dev_info(&s->rproc->dev,
+		"P487 MSS NOTIF event=%d producer=subdev chain_rc=%d\n",
+		event, rc);
+}
+
+static int p487_mss_sync_prepare(struct rproc_subdev *subdev)
+{
+	struct p487_mss_sync *s = container_of(subdev, struct p487_mss_sync, subdev);
+
+	s->stopped = false;
+	p487_mss_sync_notify(s, SUBSYS_BEFORE_POWERUP, false);
+	return 0;
+}
+
+static int p487_mss_sync_start(struct rproc_subdev *subdev)
+{
+	struct p487_mss_sync *s = container_of(subdev, struct p487_mss_sync, subdev);
+
+	p487_mss_sync_notify(s, SUBSYS_AFTER_POWERUP, false);
+	return 0;
+}
+
+static void p487_mss_sync_stop(struct rproc_subdev *subdev, bool crashed)
+{
+	struct p487_mss_sync *s = container_of(subdev, struct p487_mss_sync, subdev);
+
+	s->stopped = true;
+	s->crashed = crashed;
+	p487_mss_sync_notify(s, SUBSYS_BEFORE_SHUTDOWN, crashed);
+}
+
+static void p487_mss_sync_unprepare(struct rproc_subdev *subdev)
+{
+	struct p487_mss_sync *s = container_of(subdev, struct p487_mss_sync, subdev);
+
+	/* Do not report a completed stop on a prepare/start failure unwind
+	 * when the stop hook was never reached.
+	 */
+	if (s->stopped)
+		p487_mss_sync_notify(s, SUBSYS_AFTER_SHUTDOWN, s->crashed);
+	s->stopped = false;
+}
+
+/* Attach last, before rproc_add: stop runs first, start runs last.
+ * Caller owns the lifecycle; do not call on an already registered rproc.
+ */
+struct rproc_subdev *a52_p487_mss_sync_attach(struct rproc *rproc)
+{
+	struct p487_mss_sync *s;
+
+	if (!p487_mss_sync_ssr || !a52_p469_is_mss(rproc))
+		return NULL;
+	s = kzalloc(sizeof(*s), GFP_KERNEL);
+	if (!s)
+		return ERR_PTR(-ENOMEM);
+	s->handle = subsys_notif_add_subsys("modem");
+	if (IS_ERR_OR_NULL(s->handle)) {
+		kfree(s);
+		return ERR_PTR(-ENODEV);
+	}
+	if (cmpxchg(&p487_mss_sync_owner, NULL, rproc)) {
+		kfree(s);
+		return ERR_PTR(-EBUSY);
+	}
+	s->rproc = rproc;
+	s->subdev.prepare = p487_mss_sync_prepare;
+	s->subdev.start = p487_mss_sync_start;
+	s->subdev.stop = p487_mss_sync_stop;
+	s->subdev.unprepare = p487_mss_sync_unprepare;
+	rproc_add_subdev(rproc, &s->subdev);
+	return &s->subdev;
+}
+EXPORT_SYMBOL_GPL(a52_p487_mss_sync_attach);
+
+void a52_p487_mss_sync_detach(struct rproc *rproc, struct rproc_subdev *subdev)
+{
+	if (!subdev)
+		return;
+	rproc_remove_subdev(rproc, subdev);
+	cmpxchg(&p487_mss_sync_owner, rproc, NULL);
+	kfree(container_of(subdev, struct p487_mss_sync, subdev));
+}
+EXPORT_SYMBOL_GPL(a52_p487_mss_sync_detach);
+
 struct p470_mss_notif_work {
     struct work_struct work;
     enum subsys_notif_type type;
@@ -149,6 +271,7 @@ static void p470_mss_queue_notify(struct rproc *rproc,
     struct p470_mss_notif_work *task;
 
     if (!a52_p469_is_mss(rproc) ||
+        READ_ONCE(p487_mss_sync_owner) == rproc ||
         READ_ONCE(p470_mss_legacy_task) == current)
         return;
     if (!p470_mss_notif_wq) {

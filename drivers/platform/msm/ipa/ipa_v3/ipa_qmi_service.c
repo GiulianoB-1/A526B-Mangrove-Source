@@ -741,6 +741,8 @@ static int ipa3_qmi_init_modem_send_sync_msg(void)
 		resp.resp.error, "ipa_init_modem_driver_resp_msg_v01");
 	pr_info("P470 QMI INIT_MODEM checked_rc=%d result=%u error=%u\n",
 		rc, resp.resp.result, resp.resp.error);
+	pr_info("P487 INIT_MODEM is_ssr_bootup_valid=%u is_ssr_bootup=%u result=%u rc=%d\n",
+		req.is_ssr_bootup_valid, req.is_ssr_bootup, resp.resp.result, rc);
 	return rc;
 }
 
