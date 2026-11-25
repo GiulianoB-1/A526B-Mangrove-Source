@@ -1,0 +1,40 @@
+{
+  "repository": "micr0softstore/samsung_android_kernel_a52xq",
+  "ref": "6bf351bd",
+  "source": "techpack/audio/asoc/codecs/tas256x/",
+  "files": [
+    {
+      "path": "Kbuild",
+      "blob": "8f10b483662d4255ec31a2bb20453655363a6e59"
+    },
+    {
+      "path": "Kconfig",
+      "blob": "1730616d8762a5c0c221f730ce69c535707756fe"
+    },
+    {
+      "path": "Makefile",
+      "blob": "ec4aba0c44ccc3e7452306af5b083e107452fdea"
+    },
+    {
+      "path": "algo/src/tas25xx-calib-validation.c",
+      "blob": "4f8d4b8fb3bceef61b99b11635ecf3aec9f93fef"
+    },
+    {
+      "path": "algo/src/tas25xx-calib-validation.h",
+      "blob": "41487fb75819dd3d9070d79e84cae3f8d07f4090"
+    },
+    {
+      "path": "algo/src/tas25xx-calib.c",
+      "blob": "bfdafc847a9c2ce4063a1d2861b7b76982a4d4dc"
+    },
+    {
+      "path": "bigdata_tas_sysfs_cb.c",
+      "blob": "97edaba1f6c838d56ea68aa5403be1d94784f370"
+    },
+    {
+      "path": "bigdata_tas_sysfs_cb.h",
+      "blob": "5969803b9252ffc8d41c53ec69e45bc2fcb312e6"
+    }
+  ],
+  "enabled": false
+}
