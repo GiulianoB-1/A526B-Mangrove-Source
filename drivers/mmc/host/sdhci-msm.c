@@ -1688,6 +1688,10 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 		}
 	}
 
+	if (msm_host->a52_sd1 && !done && !READ_ONCE(msm_host->sd1_power_error) &&
+	    !(req_type & (msm_host->curr_pwr_state | msm_host->curr_io_level)))
+		WRITE_ONCE(msm_host->sd1_power_error, -EIO);
+
 	if ((req_type & REQ_BUS_ON) && mmc->card && !mmc->ops->get_cd(mmc)) {
 		sdhci_writeb(host, 0, SDHCI_POWER_CONTROL);
 		host->pwr = 0;
@@ -1739,6 +1743,11 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 	while (irq_status & msm_host_readl(msm_host, host,
 				msm_offset->core_pwrctl_status)) {
 		if (retry == 0) {
+			if (msm_host->a52_sd1) {
+				WRITE_ONCE(msm_host->sd1_power_error, -ETIMEDOUT);
+				msm_host_writel(msm_host, 0, host, msm_offset->core_pwrctl_mask);
+				return;
+			}
 			pr_err("%s: Timedout clearing (0x%x) pwrctl status register\n",
 					mmc_hostname(host->mmc), irq_status);
 			sdhci_msm_dump_pwr_ctrl_regs(host);
@@ -2524,10 +2533,16 @@ static int sdhci_msm_start_signal_voltage_switch(struct mmc_host *mmc,
 				      struct mmc_ios *ios)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
+	struct sdhci_msm_host *msm = sdhci_pltfm_priv(sdhci_priv(host));
 	u16 ctrl, status;
 
-	if (mmc->a52_sd1_ro && ios->signal_voltage != MMC_SIGNAL_VOLTAGE_330)
-		return -EINVAL;
+	if (msm->a52_sd1) {
+		int rc = READ_ONCE(msm->sd1_power_error);
+		if (rc)
+			return rc;
+		if (ios->signal_voltage != MMC_SIGNAL_VOLTAGE_330)
+			return -EINVAL;
+	}
 
 	/*
 	 * Signal Voltage Switching is only applicable for Host Controllers
@@ -2559,6 +2574,8 @@ static int sdhci_msm_start_signal_voltage_switch(struct mmc_host *mmc,
 	}
 
 	sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+	if (msm->a52_sd1 && READ_ONCE(msm->sd1_power_error))
+		return READ_ONCE(msm->sd1_power_error);
 
 	/* Wait for 5ms */
 	usleep_range(5000, 5500);
@@ -2734,7 +2751,7 @@ static int sdhci_msm_gcc_reset(struct device *dev, struct sdhci_host *host)
 
 /* The upstream set_ios/write callbacks are void: latch rail/clock failure
  * and fail all subsequent requests instead of reporting usable media. */
-static void a52_sd1_power_cleanup(struct sdhci_host *host)
+static void a52_sd1_power_cleanup(struct sdhci_host *host, bool mmio_live)
 {
 	struct sdhci_msm_host *msm = sdhci_pltfm_priv(sdhci_priv(host));
 	struct mmc_host *mmc = host->mmc;
@@ -2742,8 +2759,9 @@ static void a52_sd1_power_cleanup(struct sdhci_host *host)
 
 	if (!msm->a52_sd1)
 		return;
-	if (msm->sd1_irq_owned) {
+	if (mmio_live)
 		msm_host_writel(msm, 0, host, msm->offset->core_pwrctl_mask);
+	if (msm->sd1_irq_owned) {
 		devm_free_irq(&msm->pdev->dev, msm->pwr_irq, host);
 		msm->sd1_irq_owned = false;
 	}
@@ -3131,7 +3149,7 @@ pm_runtime_disable:
 	pm_runtime_put_noidle(&pdev->dev);
 clk_disable:
 	if (a52_sd1)
-		a52_sd1_power_cleanup(host);
+		a52_sd1_power_cleanup(host, true);
 	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
 				   msm_host->bulk_clks);
 opp_cleanup:
@@ -3142,6 +3160,12 @@ bus_clk_disable:
 	if (!IS_ERR(msm_host->bus_clk))
 		clk_disable_unprepare(msm_host->bus_clk);
 pltfm_free:
+	if (a52_sd1 && !IS_ERR_OR_NULL(msm_host->sd1_pins) &&
+	    !IS_ERR_OR_NULL(msm_host->sd1_sleep)) {
+		int pin_rc = sdhci_msm_set_pincfg(msm_host, false);
+		if (pin_rc)
+			dev_err(&pdev->dev, "A52 SDHC error cleanup pin rc=%d\n", pin_rc);
+	}
 	sdhci_pltfm_free(pdev);
 	return ret;
 }
@@ -3158,8 +3182,8 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 		pm_rc = pm_runtime_get_sync(&pdev->dev);
 	dead = pm_rc < 0 || (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) == 0xffffffff);
 	sdhci_remove_host(host, dead);
-	if (msm_host->a52_sd1 && pm_rc >= 0)
-		a52_sd1_power_cleanup(host);
+	if (msm_host->a52_sd1)
+		a52_sd1_power_cleanup(host, !dead);
 
 	dev_pm_opp_of_remove_table(&pdev->dev);
 	dev_pm_opp_put_clkname(msm_host->opp_table);
@@ -3168,7 +3192,8 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 
-	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
+	if (!msm_host->a52_sd1 || pm_rc >= 0)
+		clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
 				   msm_host->bulk_clks);
 	if (!IS_ERR(msm_host->bus_clk))
 		clk_disable_unprepare(msm_host->bus_clk);
