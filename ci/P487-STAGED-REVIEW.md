@@ -50,3 +50,7 @@ Run 45651221584 failed before compiling driver code: Kbuild single-target recurs
 ## TAS object CI fix 2
 
 Run 45652438229 reached all ten requested native object compilations. Clang rejected TRUE/FALSE macro redefinitions against ACPI and misleading indentation of unconditional kfree calls in tas256x_i2c_remove. Guard the equivalent TG boolean macros and correct indentation only; cleanup control flow is unchanged. Keep Werror, original receiver writes, compile-only traversal and all hardware gates. No production config changes. Runtime probe/remove lifetime and protection validation still pending.
+
+## Claude compile-review follow-up
+
+See ci/P487-TAS-RUNTIME-POLICY.md for exact donor accepted ranges, provisional deny policy, checked calibration status and remaining power interlock. No writer trace yet, no runtime enable.

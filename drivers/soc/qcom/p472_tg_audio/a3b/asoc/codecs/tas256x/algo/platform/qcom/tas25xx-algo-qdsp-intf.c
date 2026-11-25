@@ -90,7 +90,7 @@ int tas25xx_smartamp_get_set(u8 *user_data, uint32_t param_id,
 	int ret = 0;
 	uint32_t module_id;
 
-	if (mod_id_i > 2)
+	if (mod_id_i < TISA_MOD_RX || mod_id_i >= TISA_MOD_END)
 		return -EINVAL;
 
 	module_id = s_tisa_module_id[mod_id_i];
@@ -110,6 +110,7 @@ int tas25xx_smartamp_get_set(u8 *user_data, uint32_t param_id,
 		break;
 
 	default:
+		ret = -EINVAL;
 		break;
 	}
 	return ret;

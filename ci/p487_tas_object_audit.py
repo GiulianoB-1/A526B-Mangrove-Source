@@ -20,3 +20,6 @@ for name in ("TAS256X RECEIVER ENABLE LEFT", "TAS256X RECEIVER ENABLE RIGHT",
     assert name.encode()+b"\0" in reg, name
 assert b"P487 TAS RECEIVER ENABLE" in physical
 print("P487 TG TAS object strings PASS; 14 requested names, donor also has right receiver; no hardware proof")
+
+assert b'P487 TAS STREAM ch=' in codec
+assert b'P487 TAS CALIB ch=' in (root/'algo/src/tas25xx-calib-validation.o').read_bytes()

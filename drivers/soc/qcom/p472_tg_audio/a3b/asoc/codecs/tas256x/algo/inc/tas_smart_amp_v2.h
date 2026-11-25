@@ -149,7 +149,7 @@ bool tas25xx_set_iv_bit_fomat(int iv_data_with, int vbat, int update_now);
 
 int get_iv_vbat_format(void);
 
-void tas25xx_send_channel_mapping(void);
+int tas25xx_send_channel_mapping(void);
 void tas25xx_algo_enable_common_controls(int value);
 
 #if IS_ENABLED(CONFIG_TISA_KBIN_INTF)
@@ -159,7 +159,7 @@ void tas_smartamp_kbin_deinitalize(void);
 #endif /* CONFIG_TISA_KBIN_INTF */
 
 #if IS_ENABLED(CONFIG_TAS25XX_CALIB_VAL_BIG) || IS_ENABLED(CONFIG_TISA_DEBUGFS_INTF)
-void tas25xx_send_algo_calibration(void);
+int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS]);
 #endif
 
 #if IS_ENABLED(CONFIG_TAS25XX_CALIB_VAL_BIG)

@@ -82,7 +82,9 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 	char fname[MAX_STRING] = {0};
 	loff_t pos = 0;
 	char calib_data[MAX_STRING] = {0};
-	uint32_t data_flt[2];
+	uint32_t data_flt[2] = {0};
+	int parsed = 0;
+	u64 re_q19;
 	int ret = 0;
 
 
@@ -99,7 +101,7 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 		memcpy(fname, TAS25XX_EFS_CALIB_DATA_R,
 			sizeof(TAS25XX_EFS_CALIB_DATA_R));
 
-	pf = filp_open(fname, O_RDONLY, 0666);
+	pf = filp_open(fname, O_RDONLY, 0);
 
 	if (!IS_ERR(pf)) {
 		ret = kernel_read(pf, calib_data, MAX_STRING-1, &pos);
@@ -116,15 +118,22 @@ static int tas25xx_get_efs_data(uint32_t *data, uint8_t rdc_temp_l_r)
 				ret = -1;
 			}
 		} else {
-			ret = sscanf(calib_data, "%d.%d", &(data_flt[0]),
-					&(data_flt[1]));
-			if (ret != 2) {
-				pr_err("[TI-SmartPA:%s] file %s read error\n",
-					__func__, fname);
-				ret = -1;
+			/* TG stores decimal ohms with the fractional part in hundredths. */
+			ret = sscanf(calib_data, "%u.%u%n", &data_flt[0],
+				&data_flt[1], &parsed);
+			if (ret != 2 || !parsed ||
+			    *strim(calib_data + parsed) || data_flt[1] > 99) {
+				ret = -EINVAL;
+			} else {
+				re_q19 = ((u64)data_flt[0] << 19) +
+					 (((u64)data_flt[1] << 19) / 100);
+				if (!re_q19 || re_q19 > S32_MAX)
+					ret = -ERANGE;
+				else {
+					*data = (u32)re_q19;
+					ret = 0;
+				}
 			}
-			if (ret == 2)
-				*data = TRANSF_USER_TO_IMPED(data_flt[0], data_flt[1]);
 		}
 		filp_close(pf, NULL);
 	} else {
@@ -239,55 +248,56 @@ int tas25xx_check_limits(uint8_t channel, int32_t rdc)
 	return 0;
 }
 
-void tas25xx_send_algo_calibration(void)
+/* Report actual EFS reads and DSP SET replies, not merely a cached file. */
+int tas25xx_send_algo_calibration(u32 re[MAX_CHANNELS])
 {
-	uint32_t calib_re = 0;
-	uint32_t amb_temp = 0;
-	uint32_t data = 0;
-	uint32_t param_id = 0;
-	uint8_t iter;
-	int32_t ret = 0;
 	struct tas25xx_algo *algo = smartamp_get_sysfs_ptr();
+	u32 calib_re[MAX_CHANNELS] = {0}, amb_temp[MAX_CHANNELS] = {0};
+	u32 param_id, data;
+	int iter, ret;
 
-	if (IS_ERR(algo))  {
-		pr_err("[TI-SmartPA:%s] Error memory allocation\n", __func__);
-		return;
-	}
+	memset(re, 0, sizeof(u32) * MAX_CHANNELS);
+	if (IS_ERR(algo))
+		return PTR_ERR(algo);
+	if (algo->spk_count != 2)
+		return -EINVAL;
 
+	/* Read both channels before issuing any SET. Never write EFS. */
 	for (iter = 0; iter < algo->spk_count; iter++) {
-		if (!(algo->calib_update[iter])) {
-			algo->calib_update[iter] = true;
-
-			ret = tas25xx_get_efs_data(&calib_re, RDC_L + iter*2);
-			if (ret < 0)
-				algo->calib_update[iter] = false;
-
-			ret = tas25xx_get_efs_data(&amb_temp, TEMP_L + iter*2);
-			if (ret < 0)
-				algo->calib_update[iter] = false;
-
-			if (algo->calib_update[iter]) {
-				algo->calib_re[iter] = calib_re;
-				algo->amb_temp[iter] = amb_temp;
-			}
-		}
-
-		if (algo->calib_update[iter]) {
-			/*Set ambient temperature*/
-			data = algo->amb_temp[iter];
-			param_id = TAS_CALC_PARAM_IDX(TAS_SA_SET_TCAL, 1,
-				(iter+1));
-			ret = tas25xx_smartamp_algo_ctrl((u8 *)&data, param_id,
-				TAS_SET_PARAM, sizeof(uint32_t), TISA_MOD_RX);
-
-			/*Set Re*/
-			data = algo->calib_re[iter];
-			param_id = TAS_CALC_PARAM_IDX(TAS_SA_SET_RE, 1,
-				(iter+1));
-			ret = tas25xx_smartamp_algo_ctrl((u8 *)&data, param_id,
-				TAS_SET_PARAM, sizeof(uint32_t), TISA_MOD_RX);
-		}
+		ret = tas25xx_get_efs_data(&calib_re[iter], RDC_L + iter * 2);
+		if (ret)
+			goto fail;
+		ret = tas25xx_get_efs_data(&amb_temp[iter], TEMP_L + iter * 2);
+		if (ret)
+			goto fail;
 	}
+	for (iter = 0; iter < algo->spk_count; iter++) {
+		data = amb_temp[iter];
+		param_id = TAS_CALC_PARAM_IDX(TAS_SA_SET_TCAL, 1, iter + 1);
+		ret = tas25xx_smartamp_algo_ctrl((u8 *)&data, param_id,
+			TAS_SET_PARAM, sizeof(data), TISA_MOD_RX);
+		pr_info("P487 TAS CALIB ch=%d param=TCAL rc=%d\n", iter + 1, ret);
+		if (ret)
+			goto fail;
+		data = calib_re[iter];
+		param_id = TAS_CALC_PARAM_IDX(TAS_SA_SET_RE, 1, iter + 1);
+		ret = tas25xx_smartamp_algo_ctrl((u8 *)&data, param_id,
+			TAS_SET_PARAM, sizeof(data), TISA_MOD_RX);
+		pr_info("P487 TAS CALIB ch=%d param=RE rc=%d\n", iter + 1, ret);
+		if (ret)
+			goto fail;
+	}
+	for (iter = 0; iter < algo->spk_count; iter++) {
+		algo->calib_re[iter] = calib_re[iter];
+		algo->amb_temp[iter] = amb_temp[iter];
+		algo->calib_update[iter] = true;
+		re[iter] = calib_re[iter];
+	}
+	return 0;
+fail:
+	memset(algo->calib_update, 0, sizeof(algo->calib_update));
+	pr_err("P487 TAS CALIB failed ch=%d rc=%d\n", iter + 1, ret);
+	return ret < 0 ? ret : -EIO;
 }
 
 static int tas25xx_save_calib_data(uint32_t *calib_rdc)

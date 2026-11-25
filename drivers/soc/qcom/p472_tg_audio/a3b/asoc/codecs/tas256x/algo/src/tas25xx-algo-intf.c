@@ -70,6 +70,7 @@ int tas25xx_smartamp_algo_ctrl(u8 *user_data, uint32_t param_id,
 		mutex_unlock(&smartpa_algo_lock);
 	} else {
 		pr_info("TI-SmartPA: %s: algo set/get is bypassed\n", __func__);
+		ret = -EOPNOTSUPP;
 	}
 
 	return ret;

@@ -552,10 +552,31 @@ static int tas256x_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 		if (p_tas256x->algo_bypass == 0) {
 			tas25xx_algo_enable_common_controls(1);
 #if IS_ENABLED(CONFIG_TAS25XX_CALIB_VAL_BIG) || IS_ENABLED(CONFIG_TISA_DEBUGFS_INTF)
-			tas25xx_send_channel_mapping();
-			tas25xx_send_algo_calibration();
-			tas25xx_set_iv_bit_fomat(p_tas256x->curr_mn_iv_width,
-				p_tas256x->curr_mn_vbat, 1);
+
+			{
+			/* Keep the TG order; check each real result. */
+			u32 re[MAX_CHANNELS] = {0};
+			int rc;
+			unsigned int ch = p_tas256x->devs[0]->spk_control;
+
+			if (p_tas256x->mn_channels == 2)
+				ch |= p_tas256x->devs[1]->spk_control << 1;
+
+			rc = tas25xx_send_channel_mapping();
+			if (!rc)
+				rc = tas25xx_send_algo_calibration(re);
+			if (!rc && !tas25xx_set_iv_bit_fomat(
+				p_tas256x->curr_mn_iv_width,
+				p_tas256x->curr_mn_vbat, 1))
+				rc = -EIO;
+			pr_info("P487 TAS STREAM ch=%u algo=%s calib_valid=%u re_left=%u re_right=%u iv_port=0x1017 rc=%d\n",
+				ch, rc ? "param_failed" : "param_ack",
+				!rc, re[0], re[1], rc);
+			if (rc) {
+				tas25xx_algo_enable_common_controls(0);
+				return rc < 0 ? rc : -EIO;
+			}
+			}
 #endif /* CONFIG_TAS25XX_CALIB_VAL_BIG || CONFIG_TISA_DEBUGFS_INTF*/
 		}
 	}

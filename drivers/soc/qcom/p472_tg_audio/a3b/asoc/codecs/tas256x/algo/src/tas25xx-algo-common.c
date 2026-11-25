@@ -95,7 +95,7 @@ bool tas25xx_set_iv_bit_fomat(int iv_data_with, int vbat, int update_now)
 		ret = tas25xx_smartamp_algo_ctrl((u8 *)&g_fmt, param_id,
 				TAS_SET_PARAM, sizeof(uint32_t),
 				TISA_MOD_RX);
-		if (ret < 0) {
+		if (ret) {
 			pr_err("TI-SmartPA: %s: Failed to set config\n",
 				__func__);
 			success = false;
@@ -110,7 +110,7 @@ bool tas25xx_set_iv_bit_fomat(int iv_data_with, int vbat, int update_now)
 			__func__, iv_data_with, vbat, iv_width_vbat);
 		ret = tas25xx_smartamp_algo_ctrl((u8 *)&iv_width_vbat, param_id,
 				TAS_SET_PARAM, sizeof(int32_t), TISA_MOD_RX);
-		if (ret < 0) {
+		if (ret) {
 			pr_err("TI-SmartPA: %s: Failed to set config TAS_SA_IV_WIDTH_VBAT_MON\n",
 				__func__);
 			success = false;
@@ -121,7 +121,7 @@ bool tas25xx_set_iv_bit_fomat(int iv_data_with, int vbat, int update_now)
 }
 EXPORT_SYMBOL(tas25xx_set_iv_bit_fomat);
 
-void tas25xx_send_channel_mapping(void)
+int tas25xx_send_channel_mapping(void)
 {
 	int ret;
 	int32_t param_id;
@@ -133,6 +133,7 @@ void tas25xx_send_channel_mapping(void)
 	if (ret)
 		pr_err("TI-SmartPA: %s, Error sending, ret=%d\n",
 			__func__, ret);
+	return ret;
 }
 
 /*
