@@ -269,6 +269,8 @@ struct sdhci_msm_variant_info {
 
 struct sdhci_msm_host {
 	bool a52_sd1;
+	int sd1_power_error;
+	bool sd1_irq_owned;
 	struct pinctrl *sd1_pins;
 	struct pinctrl_state *sd1_active, *sd1_sleep;
 	struct platform_device *pdev;
@@ -379,10 +381,16 @@ static void msm_set_clock_rate_for_bus_mode(struct sdhci_host *host,
 		clock = min(clock, 50000000U);
 	rc = dev_pm_opp_set_rate(mmc_dev(host->mmc), clock);
 	if (rc) {
+		if (msm_host->a52_sd1)
+			WRITE_ONCE(msm_host->sd1_power_error, rc);
 		pr_err("%s: Failed to set clock at rate %u at timing %d\n",
 		       mmc_hostname(host->mmc), clock,
 		       curr_ios.timing);
 		return;
+	}
+	if (msm_host->a52_sd1 && clk_get_rate(core_clk) > 50000000) {
+		WRITE_ONCE(msm_host->sd1_power_error, -ERANGE);
+		dev_err(mmc_dev(host->mmc), "A52 SDHC clock exceeds 50MHz\n");
 	}
 	msm_host->clk_rate = clock;
 	pr_debug("%s: Setting clock at rate %lu at timing %d\n",
@@ -1463,21 +1471,25 @@ static int a52_sd1_rail(struct regulator *reg, bool *enabled, bool on,
 
 	if (IS_ERR_OR_NULL(reg))
 		return -ENODEV;
-	if (*enabled == on)
-		return 0;
 	if (!on) {
-		rc = regulator_disable(reg);
-		if (rc)
-			return rc;
-		*enabled = false;
+		if (*enabled) {
+			rc = regulator_disable(reg);
+			if (rc)
+				return rc;
+			*enabled = false;
+		}
 		return regulator_set_load(reg, 0);
 	}
+	if (*enabled)
+		return 0;
 	rc = regulator_set_voltage(reg, uv, uv);
 	if (rc)
 		return rc;
 	rc = regulator_set_load(reg, ua);
-	if (rc)
+	if (rc) {
+		regulator_set_load(reg, 0);
 		return rc;
+	}
 	rc = regulator_enable(reg);
 	if (rc) {
 		regulator_set_load(reg, 0);
@@ -1666,11 +1678,14 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 	 */
 	if (!done) {
 		if (!wait_event_timeout(msm_host->pwr_irq_wait,
-				msm_host->pwr_irq_flag,
-				msecs_to_jiffies(MSM_PWR_IRQ_TIMEOUT_MS)))
+				READ_ONCE(msm_host->pwr_irq_flag),
+				msecs_to_jiffies(MSM_PWR_IRQ_TIMEOUT_MS))) {
 			dev_warn(&msm_host->pdev->dev,
 				 "%s: pwr_irq for req: (%d) timed out\n",
 				 mmc_hostname(host->mmc), req_type);
+			if (msm_host->a52_sd1)
+				WRITE_ONCE(msm_host->sd1_power_error, -ETIMEDOUT);
+		}
 	}
 
 	if ((req_type & REQ_BUS_ON) && mmc->card && !mmc->ops->get_cd(mmc)) {
@@ -1740,6 +1755,8 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 	    !mmc->ops->get_cd(mmc)) {
 		msm_host_writel(msm_host, CORE_PWRCTL_BUS_FAIL, host,
 				msm_offset->core_pwrctl_ctl);
+		if (msm_host->a52_sd1)
+			WRITE_ONCE(msm_host->sd1_power_error, -ENOMEDIUM);
 		return;
 	}
 
@@ -1753,7 +1770,14 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 		io_level = REQ_IO_LOW;
 	}
 
-	if (pwr_state) {
+	if (pwr_state && msm_host->a52_sd1 && (pwr_state & REQ_BUS_OFF)) {
+		int pin = sdhci_msm_set_pincfg(msm_host, false);
+		int io = sdhci_msm_set_vqmmc(msm_host, mmc, false);
+		int vdd = sdhci_msm_set_vmmc(msm_host, mmc, false);
+
+		ret = pin ? pin : io ? io : vdd;
+		irq_ack |= ret ? CORE_PWRCTL_BUS_FAIL : CORE_PWRCTL_BUS_SUCCESS;
+	} else if (pwr_state) {
 		ret = sdhci_msm_set_vmmc(msm_host, mmc,
 					 pwr_state & REQ_BUS_ON);
 		if (!ret)
@@ -1791,10 +1815,11 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 
 	if (msm_host->a52_sd1) {
 		if (pwr_state && ret && (pwr_state & REQ_BUS_ON)) {
+			int off_pin = sdhci_msm_set_pincfg(msm_host, false);
 			int off_io = sdhci_msm_set_vqmmc(msm_host, mmc, false);
 			int off_vmmc = sdhci_msm_set_vmmc(msm_host, mmc, false);
-			dev_err(mmc_dev(mmc), "A52 SDHC power rollback io=%d vmmc=%d\n",
-				off_io, off_vmmc);
+			dev_err(mmc_dev(mmc), "A52 SDHC power rollback pin=%d io=%d vmmc=%d\n",
+				off_pin, off_io, off_vmmc);
 		}
 		if (io_level && !pwr_state &&
 		    ((io_level & REQ_IO_LOW) || !msm_host->vqmmc_enabled))
@@ -1806,8 +1831,10 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 				pwr_state & REQ_BUS_ON ? "on" : "off", ret,
 				regulator_get_voltage(mmc->supply.vmmc),
 				regulator_get_voltage(mmc->supply.vqmmc));
-		if (ret)
+		if (ret) {
+			WRITE_ONCE(msm_host->sd1_power_error, ret);
 			pwr_state = io_level = 0;
+		}
 	}
 
 	/*
@@ -1868,7 +1895,7 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 
 	sdhci_msm_handle_pwr_irq(host, irq);
-	msm_host->pwr_irq_flag = 1;
+	WRITE_ONCE(msm_host->pwr_irq_flag, 1);
 	sdhci_msm_complete_pwr_irq_wait(msm_host);
 
 
@@ -2378,7 +2405,7 @@ static int __sdhci_msm_check_write(struct sdhci_host *host, u16 val, int reg)
 	}
 
 	if (req_type) {
-		msm_host->pwr_irq_flag = 0;
+		WRITE_ONCE(msm_host->pwr_irq_flag, 0);
 		/*
 		 * Since this register write may trigger a power irq, ensure
 		 * all previous register writes are complete by this point.
@@ -2421,8 +2448,10 @@ static void sdhci_msm_set_regulator_caps(struct sdhci_msm_host *msm_host)
 	struct sdhci_host *host = mmc_priv(mmc);
 	const struct sdhci_msm_offset *msm_offset = msm_host->offset;
 
-	if (!IS_ERR(mmc->supply.vqmmc)) {
-		if (!msm_host->a52_sd1 && regulator_is_supported_voltage(supply, 1700000, 1950000))
+	if (msm_host->a52_sd1) {
+		caps = CORE_3_0V_SUPPORT;
+	} else if (!IS_ERR(mmc->supply.vqmmc)) {
+		if (regulator_is_supported_voltage(supply, 1700000, 1950000))
 			caps |= CORE_1_8V_SUPPORT;
 		if (regulator_is_supported_voltage(supply, 2700000, 3600000))
 			caps |= CORE_3_0V_SUPPORT;
@@ -2477,11 +2506,7 @@ static int sdhci_msm_register_vreg(struct sdhci_msm_host *msm_host)
 		mmc->supply.vqmmc = devm_regulator_get_optional(dev, "vdd-io");
 		if (IS_ERR(mmc->supply.vqmmc))
 			return PTR_ERR(mmc->supply.vqmmc);
-		if (regulator_is_supported_voltage(mmc->supply.vmmc,
-				2960000, 2960000) <= 0 ||
-		    regulator_is_supported_voltage(mmc->supply.vqmmc,
-				2950000, 2950000) <= 0)
-			return -EINVAL;
+		/* VRM has no list_voltage; exact constraints are enforced by set_voltage on BUS_ON. */
 		mmc->ocr_avail = MMC_VDD_29_30;
 	} else {
 		ret = mmc_regulator_get_supply(msm_host->mmc);
@@ -2705,6 +2730,65 @@ static int sdhci_msm_gcc_reset(struct device *dev, struct sdhci_host *host)
 	reset_control_put(reset);
 
 	return ret;
+}
+
+/* The upstream set_ios/write callbacks are void: latch rail/clock failure
+ * and fail all subsequent requests instead of reporting usable media. */
+static void a52_sd1_power_cleanup(struct sdhci_host *host)
+{
+	struct sdhci_msm_host *msm = sdhci_pltfm_priv(sdhci_priv(host));
+	struct mmc_host *mmc = host->mmc;
+	int pin, io = 0, vdd = 0;
+
+	if (!msm->a52_sd1)
+		return;
+	if (msm->sd1_irq_owned) {
+		msm_host_writel(msm, 0, host, msm->offset->core_pwrctl_mask);
+		devm_free_irq(&msm->pdev->dev, msm->pwr_irq, host);
+		msm->sd1_irq_owned = false;
+	}
+	pin = sdhci_msm_set_pincfg(msm, false);
+	if (!IS_ERR_OR_NULL(mmc->supply.vqmmc))
+		io = sdhci_msm_set_vqmmc(msm, mmc, false);
+	if (!IS_ERR_OR_NULL(mmc->supply.vmmc))
+		vdd = sdhci_msm_set_vmmc(msm, mmc, false);
+	dev_info(&msm->pdev->dev, "A52 SDHC cleanup pin=%d io=%d vdd=%d\n", pin, io, vdd);
+}
+
+static int a52_sd1_request_error(struct mmc_host *mmc, struct mmc_request *mrq)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	struct sdhci_msm_host *msm = sdhci_pltfm_priv(sdhci_priv(host));
+	int rc = READ_ONCE(msm->sd1_power_error);
+
+	if (mrq->data && (mrq->data->flags & MMC_DATA_WRITE))
+		return -EROFS;
+	if (rc)
+		return rc;
+	if (!mmc->regulator_enabled || !msm->vqmmc_enabled)
+		return -EIO;
+	return 0;
+}
+
+static void a52_sd1_request(struct mmc_host *mmc, struct mmc_request *mrq)
+{
+	int rc = a52_sd1_request_error(mmc, mrq);
+
+	if (rc) {
+		mrq->cmd->error = rc;
+		mmc_request_done(mmc, mrq);
+		return;
+	}
+	sdhci_request(mmc, mrq);
+}
+
+static int a52_sd1_request_atomic(struct mmc_host *mmc, struct mmc_request *mrq)
+{
+	int rc = a52_sd1_request_error(mmc, mrq);
+
+	if (rc)
+		return -EBUSY; /* retry via normal request path, which reports the error */
+	return sdhci_request_atomic(mmc, mrq);
 }
 
 static int sdhci_msm_probe(struct platform_device *pdev)
@@ -2989,6 +3073,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Request IRQ failed (%d)\n", ret);
 		goto clk_disable;
 	}
+	if (a52_sd1)
+		msm_host->sd1_irq_owned = true;
 
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_NEED_RSP_BUSY;
 
@@ -3013,8 +3099,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 				MMC_CAP2_CQE | MMC_CAP2_CQE_DCMD);
 			host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_MMC;
 			host->flags &= ~(SDHCI_SIGNALING_180 | SDHCI_SIGNALING_120);
+			host->flags |= SDHCI_SIGNALING_330;
+			host->mmc_host_ops.request = a52_sd1_request;
+			host->mmc_host_ops.request_atomic = a52_sd1_request_atomic;
 			host->mmc->f_max = min(host->mmc->f_max, 50000000U);
-			ret = __sdhci_add_host(host);
+			ret = READ_ONCE(msm_host->sd1_power_error);
+			if (!ret)
+				ret = __sdhci_add_host(host);
 			if (ret)
 				sdhci_cleanup_host(host);
 		}
@@ -3039,6 +3130,8 @@ pm_runtime_disable:
 	pm_runtime_set_suspended(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 clk_disable:
+	if (a52_sd1)
+		a52_sd1_power_cleanup(host);
 	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
 				   msm_host->bulk_clks);
 opp_cleanup:
@@ -3058,14 +3151,20 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	struct sdhci_host *host = platform_get_drvdata(pdev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
-	int dead = (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) ==
-		    0xffffffff);
+	int dead;
+	int pm_rc = 0;
 
+	if (msm_host->a52_sd1)
+		pm_rc = pm_runtime_get_sync(&pdev->dev);
+	dead = pm_rc < 0 || (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) == 0xffffffff);
 	sdhci_remove_host(host, dead);
+	if (msm_host->a52_sd1 && pm_rc >= 0)
+		a52_sd1_power_cleanup(host);
 
 	dev_pm_opp_of_remove_table(&pdev->dev);
 	dev_pm_opp_put_clkname(msm_host->opp_table);
-	pm_runtime_get_sync(&pdev->dev);
+	if (!msm_host->a52_sd1)
+		pm_runtime_get_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 	pm_runtime_put_noidle(&pdev->dev);
 
@@ -3083,6 +3182,11 @@ static __maybe_unused int sdhci_msm_runtime_suspend(struct device *dev)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 
+	if (msm_host->a52_sd1) {
+		int ret = sdhci_msm_set_pincfg(msm_host, false);
+		if (ret)
+			return ret;
+	}
 	/* Drop the performance vote */
 	dev_pm_opp_set_rate(dev, 0);
 	clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks),
@@ -3108,11 +3212,19 @@ static __maybe_unused int sdhci_msm_runtime_resume(struct device *dev)
 	 */
 	if (msm_host->restore_dll_config && msm_host->clk_rate) {
 		ret = sdhci_msm_restore_sdr_dll_config(host);
-		if (ret)
+		if (ret) {
+			if (msm_host->a52_sd1)
+				clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks), msm_host->bulk_clks);
 			return ret;
+		}
 	}
 
-	dev_pm_opp_set_rate(dev, msm_host->clk_rate);
+	ret = dev_pm_opp_set_rate(dev, msm_host->clk_rate);
+	if (ret && msm_host->a52_sd1) {
+		WRITE_ONCE(msm_host->sd1_power_error, ret);
+		clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks), msm_host->bulk_clks);
+		return ret;
+	}
 
 	if (msm_host->a52_sd1) {
 		ret = sdhci_msm_set_pincfg(msm_host, true);
