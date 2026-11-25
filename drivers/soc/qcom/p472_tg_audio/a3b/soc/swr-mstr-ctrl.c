@@ -2181,7 +2181,8 @@ static irqreturn_t swr_mstr_interrupt(int irq, void *dev)
 
 	intr_sts = swr_master_read(swrm, SWRM_INTERRUPT_STATUS);
 	intr_sts_masked = intr_sts & swrm->intr_mask;
-	dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ raw=0x%x masked=0x%x irq=%d\n", intr_sts, intr_sts_masked, irq);
+	if (p487_audio_debug())
+		dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ raw=0x%x masked=0x%x irq=%d\n", intr_sts, intr_sts_masked, irq);
 
 	dev_dbg(swrm->dev, "%s: status: 0x%x \n", __func__, intr_sts_masked);
 	trace_printk("%s: status: 0x%x \n", __func__, intr_sts_masked);
@@ -2193,7 +2194,8 @@ handle_irq:
 
 		switch (value) {
 		case SWRM_INTERRUPT_STATUS_SLAVE_PEND_IRQ:
-			dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ slave_pending=1 raw=0x%x\n", intr_sts);
+			if (p487_audio_debug())
+				dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ slave_pending=1 raw=0x%x\n", intr_sts);
 			dev_dbg(swrm->dev, "%s: Trigger irq to slave device\n",
 				__func__);
 			status = swr_master_read(swrm, SWRM_MCP_SLV_STATUS);
@@ -2218,7 +2220,8 @@ handle_irq:
 				if (swr_dev->slave_irq) {
 					do {
 						swr_dev->slave_irq_pending = 0;
-						dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ devnum=%u virq=%u\n", devnum, irq_find_mapping(swr_dev->slave_irq, 0));
+						if (p487_audio_debug())
+							dev_info_ratelimited(swrm->dev, "P484 SWR_IRQ devnum=%u virq=%u\n", devnum, irq_find_mapping(swr_dev->slave_irq, 0));
 						handle_nested_irq(
 							irq_find_mapping(
 							swr_dev->slave_irq, 0));
@@ -2418,7 +2421,8 @@ static irqreturn_t swrm_wakeup_interrupt(int irq, void *dev)
 	}
 
 	trace_printk("%s enter\n", __func__);
-	dev_info_ratelimited(swrm->dev, "P484 SWR_WAKE irq=%d wake_irq=%d ipc=%d state=%d\n", irq, swrm->wake_irq, swrm->ipc_wakeup, swrm->state);
+	if (p487_audio_debug())
+		dev_info_ratelimited(swrm->dev, "P484 SWR_WAKE irq=%d wake_irq=%d ipc=%d state=%d\n", irq, swrm->wake_irq, swrm->ipc_wakeup, swrm->state);
 	mutex_lock(&swrm->devlock);
 	if (swrm->state == SWR_MSTR_SSR || !swrm->dev_up) {
 		if (swrm->wake_irq > 0) {
@@ -3309,7 +3313,8 @@ static int swrm_runtime_resume(struct device *dev)
 	if ((swrm->state == SWR_MSTR_DOWN) ||
 	    (swrm->state == SWR_MSTR_SSR && swrm->dev_up)) {
 		if (swrm->clk_stop_mode0_supp) {
-			dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=resume wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
+			if (p487_audio_debug())
+				dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=resume wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
 			if (swrm->wake_irq > 0) {
 				if (unlikely(!irq_get_irq_data
 				    (swrm->wake_irq))) {
@@ -3539,12 +3544,14 @@ static int swrm_runtime_suspend(struct device *dev)
 
 		if (swrm->clk_stop_mode0_supp) {
 			if (swrm->wake_irq > 0) {
-				dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=suspend wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
+				if (p487_audio_debug())
+					dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=suspend wake_irq=%d ipc=%d\n", swrm->wake_irq, swrm->ipc_wakeup);
 				irq_data = irq_get_irq_data(swrm->wake_irq);
 				if (irq_data && irqd_irq_disabled(irq_data))
 					enable_irq(swrm->wake_irq);
 			} else if (swrm->ipc_wakeup) {
-				dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=ipc_register\n");
+				if (p487_audio_debug())
+					dev_info_ratelimited(dev, "P484 SWR_WAKE_ARM op=ipc_register\n");
 				msm_aud_evt_blocking_notifier_call_chain(
 					SWR_WAKE_IRQ_REGISTER, (void *)swrm);
 				swrm->ipc_wakeup_triggered = false;

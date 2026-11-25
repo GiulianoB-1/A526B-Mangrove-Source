@@ -3,6 +3,7 @@
  * Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
  * Native adaptation of TG 6bf351bd techpack/audio/dsp.
  */
+#include <linux/p481_audio_diag.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
 #include <linux/err.h>
@@ -37,10 +38,12 @@ static void vote_trace(struct clk *clk, const char *op, int rc,
 {
 	const char *name = IS_ERR_OR_NULL(clk) ? "invalid" : __clk_get_name(clk);
 
-	pr_info("P482 HW_VOTE op=%s clk=%s rc=%d held=%u caller=%pS\n",
+	if (rc || p487_audio_debug())
+		pr_info("P482 HW_VOTE op=%s clk=%s rc=%d held=%u caller=%pS\n",
 		op, name, rc, held, caller);
 #ifdef CONFIG_P480_A3C
-	pr_info("P481 VOTE clk=%s op=%s count=%u caller=%pS backend=real\n",
+	if (rc || p487_audio_debug())
+		pr_info("P481 VOTE clk=%s op=%s count=%u caller=%pS backend=real\n",
 		name, op, held, caller);
 #endif
 }

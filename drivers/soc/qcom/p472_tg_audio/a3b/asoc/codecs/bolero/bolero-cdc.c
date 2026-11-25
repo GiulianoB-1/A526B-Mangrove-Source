@@ -490,7 +490,8 @@ rollback_core:
 	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_core_hw_vote);
 	core = false;
 done:
-	pr_info("P484 CDC_DMA_VOTE op=get port=0x%x core=%d dcodec=%d rc=%d\n",
+	if (rc || p487_audio_debug())
+		pr_info("P484 CDC_DMA_VOTE op=get port=0x%x core=%d dcodec=%d rc=%d\n",
 		port, core, audio, rc);
 	return rc;
 }
@@ -501,7 +502,8 @@ void p484_cdc_vote_put(struct device *dev, unsigned int port)
 
 	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_audio_hw_vote);
 	digital_cdc_rsc_mgr_hw_vote_disable(priv->lpass_core_hw_vote);
-	pr_info("P484 CDC_DMA_VOTE op=put port=0x%x core=%d dcodec=%d rc=0\n",
+	if (p487_audio_debug())
+		pr_info("P484 CDC_DMA_VOTE op=put port=0x%x core=%d dcodec=%d rc=0\n",
 		port, digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_core_hw_vote),
 		digital_cdc_rsc_mgr_hw_vote_held(priv->lpass_audio_hw_vote));
 }

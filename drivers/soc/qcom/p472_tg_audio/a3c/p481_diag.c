@@ -3,6 +3,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/jiffies.h>
+#include <linux/delay.h>
 #include <linux/kobject.h>
 #include <ipc/apr.h>
 #include <linux/sysfs.h>
@@ -22,6 +23,41 @@ static bool card_attempted;
 static bool card_enable = true;
 static unsigned int bolero_guard = 1;
 static bool p486_auto_started;
+static bool p487_debug;
+
+bool p487_audio_debug(void)
+{
+	return READ_ONCE(p487_debug);
+}
+
+static int __init p487_debug_setup(char *str)
+{
+	bool enabled;
+
+	if (kstrtobool(str, &enabled))
+		return 0;
+	p487_debug = enabled;
+	return 1;
+}
+__setup("a52_audio.debug=", p487_debug_setup);
+
+static ssize_t debug_show(struct kobject *kobj,
+			  struct kobj_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%u\n", p487_audio_debug());
+}
+
+static ssize_t debug_store(struct kobject *kobj,
+			   struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	bool enabled;
+
+	if (kstrtobool(buf, &enabled))
+		return -EINVAL;
+	WRITE_ONCE(p487_debug, enabled);
+	return count;
+}
+static struct kobj_attribute debug_attr = __ATTR_RW(debug);
 
 unsigned int p483_bolero_guard(void)
 {
@@ -147,9 +183,9 @@ P481_BOOL_ATTR(rpm_forbid);
 P481_BOOL_ATTR(dapm_idle_off);
 
 /* Both automatic and manual paths use the same one-shot gate. */
-static int p483_register_card(void)
+static int p483_register_card(bool manual)
 {
-	int rc;
+	int rc, retry;
 
 	mutex_lock(&p481_lock);
 	if (card_attempted) {
@@ -167,7 +203,33 @@ static int p483_register_card(void)
 		bus_for_each_dev(&platform_bus_type, NULL, NULL, p481_hold_existing);
 		bus_for_each_dev(&soundwire_type, NULL, NULL, p481_hold_existing);
 	}
-	rc = p480_kona_machine_init();
+	/* The work item that claims the locked one-shot is the actual source. */
+	pr_info("P483 CARD_AUTO adsp_ready=1\n");
+	if (manual)
+		pr_info("P486 CARD_AUTO source=manual_knob\n");
+	else
+		pr_info("P486 CARD_AUTO source=apr_loaded\n");
+
+	/* Never repeat a successful platform_driver_register().
+	 * Deferred device probes are already handled by the driver core.
+	 * Retry only a transient failure to register the driver itself.
+	 */
+	for (retry = 0; ; retry++) {
+		rc = p480_kona_machine_init();
+		if (rc != -EAGAIN && rc != -EPROBE_DEFER)
+			break;
+		if (retry == 3) {
+			pr_err("P487 CARD_RETRY exhausted rc=%d retries=%d\n", rc, retry);
+			break;
+		}
+		pr_warn("P487 CARD_RETRY retry=%d rc=%d delay_ms=2000\n", retry + 1, rc);
+		msleep(2000);
+		if (apr_get_q6_state() != APR_SUBSYS_LOADED) {
+			rc = -ENODEV;
+			pr_err("P487 CARD_RETRY abort ADSP not loaded\n");
+			break;
+		}
+	}
 	pr_info("P481 CARD_ENABLE rc=%d\n", rc);
 	if (rc)
 		pr_err("P480 A3c INIT_FAIL stage=machine rc=%d; A3a preserved\n", rc);
@@ -176,6 +238,7 @@ static int p483_register_card(void)
 
 static void p483_auto_work(struct work_struct *work);
 static DECLARE_WORK(p483_card_job, p483_auto_work);
+static DECLARE_WORK(p487_manual_card_job, p483_auto_work);
 
 static void p483_auto_work(struct work_struct *work)
 {
@@ -184,9 +247,7 @@ static void p483_auto_work(struct work_struct *work)
 	/* APR LOADED is gated by the real transport GET_STATE response. */
 	if (apr_get_q6_state() != APR_SUBSYS_LOADED)
 		return;
-	pr_info("P483 CARD_AUTO adsp_ready=1\n");
-	pr_info("P486 CARD_AUTO source=apr_loaded\n");
-	p483_register_card();
+	p483_register_card(work == &p487_manual_card_job);
 }
 
 /* Called after the genuine APR UP event; never register in the callback. */
@@ -229,10 +290,13 @@ static ssize_t card_enable_store(struct kobject *kobj,
 	}
 	WRITE_ONCE(card_enable, !!val);
 	mutex_unlock(&p481_lock);
-	if (val)
-		p486_card_adsp_up();
-	else
+	if (val) {
+		if (READ_ONCE(p486_auto_started))
+			schedule_work(&p487_manual_card_job);
+	} else {
 		cancel_work_sync(&p483_card_job);
+		cancel_work_sync(&p487_manual_card_job);
+	}
 	return count;
 }
 static struct kobj_attribute card_enable_attr = __ATTR_RW(card_enable);
@@ -274,7 +338,8 @@ static struct kobj_attribute mbhc_dump_attr = __ATTR(mbhc_dump, 0200, NULL, mbhc
 
 static struct attribute *audio_attrs[] = {
 	&card_enable_attr.attr, &mbhc_enable_attr.attr, &rpm_forbid_attr.attr,
-	&dapm_idle_off_attr.attr, &bolero_guard_attr.attr, &mbhc_dump_attr.attr, NULL,
+	&dapm_idle_off_attr.attr, &bolero_guard_attr.attr, &mbhc_dump_attr.attr,
+	&debug_attr.attr, NULL,
 };
 static const struct attribute_group audio_group = { .attrs = audio_attrs };
 

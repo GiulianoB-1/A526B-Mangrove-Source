@@ -158,7 +158,8 @@ static int wcd938x_handle_post_irq(void *data)
 	regmap_read(wcd938x->regmap, WCD938X_DIGITAL_INTR_STATUS_1, &sts2);
 	regmap_read(wcd938x->regmap, WCD938X_DIGITAL_INTR_STATUS_2, &sts3);
 
-	dev_info_ratelimited(wcd938x->dev, "P484 WCD_IRQ post status=%02x/%02x/%02x\n", sts1, sts2, sts3);
+	if (p487_audio_debug())
+		dev_info_ratelimited(wcd938x->dev, "P484 WCD_IRQ post status=%02x/%02x/%02x\n", sts1, sts2, sts3);
 	wcd938x->tx_swr_dev->slave_irq_pending =
 			((sts1 || sts2 || sts3) ? true : false);
 
@@ -213,7 +214,8 @@ static int p486_tx_update_bits(struct snd_soc_component *component,
 	int step = atomic_inc_return(&p486_tx_step);
 	int rc = snd_soc_component_update_bits(component, reg, mask, val);
 
-	dev_info(component->dev,
+	if (rc < 0 || p487_audio_debug())
+		dev_info(component->dev,
 		 "P486 TX_SEQ step=%d op=reg_write reg=0x%x val=0x%x mask=0x%x rc=%d caller=%s\n",
 		 step, reg, val, mask, rc, caller);
 	return rc;
@@ -226,7 +228,8 @@ static int p486_tx_datapath(struct snd_soc_component *component,
 	int step = atomic_inc_return(&p486_tx_step);
 	int rc = swr_slvdev_datapath_control(swr, swr->dev_num, enable);
 
-	dev_info(component->dev,
+	if (rc < 0 || p487_audio_debug())
+		dev_info(component->dev,
 		 "P486 TX_SEQ step=%d op=datapath enable=%u dev=%u rc=%d\n",
 		 step, enable, swr->dev_num, rc);
 	return rc;
@@ -260,7 +263,8 @@ static int wcd938x_set_swr_clk_rate(struct snd_soc_component *component,
 	step = atomic_inc_return(&p486_tx_step);
 	rc = snd_soc_component_update_bits(component,
 				      WCD938X_DIGITAL_SWR_TX_CLK_RATE, mask, val);
-	dev_info(component->dev,
+	if (rc < 0 || p487_audio_debug())
+		dev_info(component->dev,
 		 "P486 TX_SEQ step=%d op=clk_rate reg=0x%x val=0x%x mask=0x%x rate=%d bank=%d rc=%d\n",
 		 step, WCD938X_DIGITAL_SWR_TX_CLK_RATE, val, mask, rate, bank, rc);
 
@@ -487,11 +491,13 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 	    slave_ch_idx < ARRAY_SIZE(wcd938x->tx_master_ch_map) &&
 	    wcd938x->tx_master_ch_map[slave_ch_idx] != ZERO) {
 		ch_type = wcd938x->tx_master_ch_map[slave_ch_idx];
-		dev_info_ratelimited(component->dev,
+		if (p487_audio_debug())
+			dev_info_ratelimited(component->dev,
 			"P484 TX_CHMAP slv=%u master=%u source=override\n",
 			slv_port_type, ch_type);
 	} else {
-		dev_info_ratelimited(component->dev,
+		if (p487_audio_debug())
+			dev_info_ratelimited(component->dev,
 			"P484 TX_CHMAP slv=%u master=%u source=dt\n",
 			slv_port_type, ch_type);
 	}
@@ -507,7 +513,8 @@ static int wcd938x_tx_connect_port(struct snd_soc_component *component,
 	else
 		ret = swr_disconnect_port(wcd938x->tx_swr_dev, &port_id,
 					num_port, &ch_mask, &ch_type);
-	dev_info(component->dev,
+	if (ret < 0 || p487_audio_debug())
+		dev_info(component->dev,
 		 "P486 TX_SEQ step=%d op=connect_port enable=%u slv=%u port=%u rate=%u master=%u rc=%d\n",
 		 step, enable, slv_port_type, port_id, ch_rate, ch_type, ret);
 	return ret;
@@ -1398,7 +1405,8 @@ static void p485_tx_dapm_trace(struct snd_soc_dapm_widget *w, int event)
 	case SND_SOC_DAPM_POST_PMD: name = "POST_PMD"; break;
 	default: return;
 	}
-	pr_info_ratelimited("P485 TX_DAPM w=%s event=%s\n", w->name, name);
+	if (p487_audio_debug())
+		pr_info_ratelimited("P485 TX_DAPM w=%s event=%s\n", w->name, name);
 }
 
 static int wcd938x_codec_enable_dmic(struct snd_soc_dapm_widget *w,

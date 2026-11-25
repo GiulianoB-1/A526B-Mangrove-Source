@@ -19,9 +19,9 @@ def audit_apr_card_ready(root):
             raise AssertionError("P486 APR card gate: " + label)
 
     worker = body(diag, "static void p483_auto_work(struct work_struct *work)\n{")
-    require(r"if \(!READ_ONCE\(card_enable\) \|\| READ_ONCE\(card_attempted\)\)\s*return;.*?if \(apr_get_q6_state\(\) != APR_SUBSYS_LOADED\)\s*return;.*?p483_register_card\(\);",
+    require(r"if \(!READ_ONCE\(card_enable\) \|\| READ_ONCE\(card_attempted\)\)\s*return;.*?if \(apr_get_q6_state\(\) != APR_SUBSYS_LOADED\)\s*return;.*?p483_register_card\(work == &p487_manual_card_job\);",
             worker, "worker rejects disabled, attempted or not-ready card")
-    register = body(diag, "static int p483_register_card(void)\n{")
+    register = body(diag, "static int p483_register_card(bool manual)\n{")
     require(r"mutex_lock\(&p481_lock\);.*?if \(card_attempted\) \{.*?return -EBUSY;.*?if \(!card_enable\) \{.*?return -ECANCELED;.*?WRITE_ONCE\(card_attempted, true\);.*?mutex_unlock\(&p481_lock\);.*?p480_kona_machine_init\(\);",
             register, "locked one-shot registration gate")
     hook = body(diag, "void p486_card_adsp_up(void)\n{")
@@ -31,8 +31,9 @@ def audit_apr_card_ready(root):
     require(r"WRITE_ONCE\(p486_auto_started, true\);\s*smp_mb\(\);\s*if \(apr_get_q6_state\(\) == APR_SUBSYS_LOADED\)\s*p486_card_adsp_up\(\);",
             startup, "already-loaded startup and event race gate")
     manual = body(diag, "static ssize_t card_enable_store(")
-    require(r"if \(val\)\s*p486_card_adsp_up\(\);\s*else\s*cancel_work_sync\(&p483_card_job\);",
+    require(r"if \(val\) \{.*?schedule_work\(&p487_manual_card_job\);.*?\} else \{\s*cancel_work_sync\(&p483_card_job\);\s*cancel_work_sync\(&p487_manual_card_job\);",
             manual, "manual enable and cancellation")
+    require(r"if \(manual\).*?source=manual_knob.*?else.*?source=apr_loaded.*?for \(retry = 0; ; retry\+\+\).*?rc = p480_kona_machine_init\(\);.*?if \(rc != -EAGAIN && rc != -EPROBE_DEFER\)\s*break;.*?if \(retry == 3\).*?msleep\(2000\);.*?if \(apr_get_q6_state\(\) != APR_SUBSYS_LOADED\)", register, "actual source and bounded transient driver-registration retries")
     setter = body(apr, "int apr_set_q6_state(")
     require(r"if \(state == APR_SUBSYS_LOADED &&\s*!atomic_read\(&p472_tg_a0b_ready\)\) \{.*?return -EAGAIN;.*?atomic_set\(&q6.q6_state, state\);",
             setter, "APR LOADED requires real readiness")

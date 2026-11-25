@@ -975,7 +975,8 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	enum snd_jack_types jack_type;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_swch_irq_handler\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_swch_irq_handler\n");
 #endif
 	dev_dbg(component->dev, "%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1146,7 +1147,8 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_mech_plug_detect_irq\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_mech_plug_detect_irq\n");
 	if (p481_mbhc_disabled()) {
 		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
 		return IRQ_HANDLED;
@@ -1213,7 +1215,8 @@ static void wcd_btn_lpress_fn(struct work_struct *work)
 	s16 btn_result = 0;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_btn_lpress_fn\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_btn_lpress_fn\n");
 #endif
 	pr_debug("%s: Enter\n", __func__);
 
@@ -1262,7 +1265,8 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	unsigned long msec_val;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_btn_press_handler\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_btn_press_handler\n");
 	if (p481_mbhc_disabled()) {
 		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
 		return IRQ_HANDLED;
@@ -1320,7 +1324,8 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	int ret;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_release_handler\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_release_handler\n");
 	if (p481_mbhc_disabled()) {
 		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
 		return IRQ_HANDLED;
@@ -1392,7 +1397,8 @@ static irqreturn_t wcd_mbhc_hphl_ocp_irq(int irq, void *data)
 	int val;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphl_ocp_irq\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphl_ocp_irq\n");
 	if (p481_mbhc_disabled()) {
 		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
 		return IRQ_HANDLED;
@@ -1439,7 +1445,8 @@ static irqreturn_t wcd_mbhc_hphr_ocp_irq(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphr_ocp_irq\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_hphr_ocp_irq\n");
 	if (p481_mbhc_disabled()) {
 		pr_err_ratelimited("P482 MBHC_IRQ_BLOCKED irq=%d handler=%s\n", irq, __func__);
 		return IRQ_HANDLED;
@@ -1488,7 +1495,8 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	struct snd_soc_component *component = mbhc->component;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_initialise\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_initialise\n");
 #endif
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -1602,7 +1610,8 @@ static void wcd_mbhc_fw_read(struct work_struct *work)
 	bool use_default_cal = false;
 
 #ifdef CONFIG_P480_A3C
-	pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_fw_read\n");
+	if (p487_audio_debug())
+		pr_info_ratelimited("P481 MBHC ev=wcd_mbhc_fw_read\n");
 #endif
 	dwork = to_delayed_work(work);
 	mbhc = container_of(dwork, struct wcd_mbhc, mbhc_firmware_dwork);
@@ -1766,7 +1775,8 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 	const char *gnd_det = "qcom,msm-mbhc-gnd-det";
 
 #ifdef CONFIG_P480_A3C
-	pr_info("P481 MBHC ev=start\n");
+	if (p487_audio_debug())
+		pr_info("P481 MBHC ev=start\n");
 #endif
 	if (p481_mbhc_disabled())
 		return -ECANCELED; /* explicit diagnostic cancellation */

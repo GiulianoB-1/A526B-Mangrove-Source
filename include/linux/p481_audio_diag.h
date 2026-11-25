@@ -15,7 +15,9 @@ int p481_diag_register(void);
 void p483_card_auto_start(void);
 void p486_card_adsp_up(void);
 unsigned int p483_bolero_guard(void);
+bool p487_audio_debug(void);
 #else
+static inline bool p487_audio_debug(void) { return true; }
 static inline bool p481_card_armed(void) { return false; }
 static inline bool p481_mbhc_disabled(void) { return false; }
 static inline bool p481_bias_hold(void) { return false; }
