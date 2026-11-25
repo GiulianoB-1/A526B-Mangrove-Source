@@ -269,6 +269,8 @@ struct sdhci_msm_variant_info {
 
 struct sdhci_msm_host {
 	bool a52_sd1;
+	struct pinctrl *sd1_pins;
+	struct pinctrl_state *sd1_active, *sd1_sleep;
 	struct platform_device *pdev;
 	void __iomem *core_mem;	/* MSM SDCC mapped address */
 	void __iomem *ice_mem;	/* MSM ICE mapped address (if available) */
@@ -373,6 +375,8 @@ static void msm_set_clock_rate_for_bus_mode(struct sdhci_host *host,
 	int rc;
 
 	clock = msm_get_clock_rate_for_bus_mode(host, clock);
+	if (msm_host->a52_sd1)
+		clock = min(clock, 50000000U);
 	rc = dev_pm_opp_set_rate(mmc_dev(host->mmc), clock);
 	if (rc) {
 		pr_err("%s: Failed to set clock at rate %u at timing %d\n",
@@ -1405,6 +1409,10 @@ static int sdhci_msm_set_pincfg(struct sdhci_msm_host *msm_host, bool level)
 	struct platform_device *pdev = msm_host->pdev;
 	int ret;
 
+	if (msm_host->a52_sd1)
+		return pinctrl_select_state(msm_host->sd1_pins,
+			level ? msm_host->sd1_active : msm_host->sd1_sleep);
+
 	if (level)
 		ret = pinctrl_pm_select_default_state(&pdev->dev);
 	else
@@ -1873,6 +1881,8 @@ static unsigned int sdhci_msm_get_max_clock(struct sdhci_host *host)
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 	struct clk *core_clk = msm_host->bulk_clks[0].clk;
 
+	if (msm_host->a52_sd1)
+		return 50000000;
 	return clk_round_rate(core_clk, ULONG_MAX);
 }
 
@@ -2412,7 +2422,7 @@ static void sdhci_msm_set_regulator_caps(struct sdhci_msm_host *msm_host)
 	const struct sdhci_msm_offset *msm_offset = msm_host->offset;
 
 	if (!IS_ERR(mmc->supply.vqmmc)) {
-		if (regulator_is_supported_voltage(supply, 1700000, 1950000))
+		if (!msm_host->a52_sd1 && regulator_is_supported_voltage(supply, 1700000, 1950000))
 			caps |= CORE_1_8V_SUPPORT;
 		if (regulator_is_supported_voltage(supply, 2700000, 3600000))
 			caps |= CORE_3_0V_SUPPORT;
@@ -2456,19 +2466,27 @@ static int sdhci_msm_register_vreg(struct sdhci_msm_host *msm_host)
 {
 	int ret;
 
-	ret = mmc_regulator_get_supply(msm_host->mmc);
-	if (ret)
-		return ret;
-
 	if (msm_host->a52_sd1) {
 		struct mmc_host *mmc = msm_host->mmc;
+		struct device *dev = &msm_host->pdev->dev;
 
-		if (IS_ERR_OR_NULL(mmc->supply.vmmc) ||
-		    IS_ERR_OR_NULL(mmc->supply.vqmmc))
-			return -ENODEV;
-		if (!(mmc->ocr_avail & MMC_VDD_29_30))
+		/* R02 downstream names; mandatory physical supplies. */
+		mmc->supply.vmmc = devm_regulator_get_optional(dev, "vdd");
+		if (IS_ERR(mmc->supply.vmmc))
+			return PTR_ERR(mmc->supply.vmmc);
+		mmc->supply.vqmmc = devm_regulator_get_optional(dev, "vdd-io");
+		if (IS_ERR(mmc->supply.vqmmc))
+			return PTR_ERR(mmc->supply.vqmmc);
+		if (regulator_is_supported_voltage(mmc->supply.vmmc,
+				2960000, 2960000) <= 0 ||
+		    regulator_is_supported_voltage(mmc->supply.vqmmc,
+				2950000, 2950000) <= 0)
 			return -EINVAL;
 		mmc->ocr_avail = MMC_VDD_29_30;
+	} else {
+		ret = mmc_regulator_get_supply(msm_host->mmc);
+		if (ret)
+			return ret;
 	}
 	sdhci_msm_set_regulator_caps(msm_host);
 	if (msm_host->a52_sd1)
@@ -2482,6 +2500,9 @@ static int sdhci_msm_start_signal_voltage_switch(struct mmc_host *mmc,
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 	u16 ctrl, status;
+
+	if (mmc->a52_sd1_ro && ios->signal_voltage != MMC_SIGNAL_VOLTAGE_330)
+		return -EINVAL;
 
 	/*
 	 * Signal Voltage Switching is only applicable for Host Controllers
@@ -2595,7 +2616,6 @@ static const struct sdhci_msm_variant_info sm8250_sdhci_var = {
 };
 
 static const struct of_device_id sdhci_msm_dt_match[] = {
-	{.compatible = "samsung,a52xq-sdhci", .data = &sdhci_msm_v5_var},
 	{.compatible = "qcom,sdhci-msm-v4", .data = &sdhci_msm_mci_var},
 	{.compatible = "qcom,sdhci-msm-v5", .data = &sdhci_msm_v5_var},
 	{.compatible = "qcom,sdm670-sdhci", .data = &sdm845_sdhci_var},
@@ -2702,16 +2722,16 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	struct device_node *node = pdev->dev.of_node;
 	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	bool lagoon = of_machine_is_compatible("qcom,lagoon");
-	bool a52_sd1 = of_device_is_compatible(node, "samsung,a52xq-sdhci");
+	bool a52_sd1 = lagoon && res && res->start == 0x8804000;
 
 	/* Reject before mapping registers, clocks, or any ICE path. */
 	if (lagoon && res && res->start == 0x7c4000) {
 		dev_info(&pdev->dev, "A52 SDHC refuse sdhc1 (eMMC slot unused on UFS)\n");
 		return -ENODEV;
 	}
-	if (lagoon && (!res || res->start != 0x8804000 || !a52_sd1))
+	if (lagoon && !a52_sd1)
 		return -ENODEV;
-	if (a52_sd1 && (!lagoon || !res || res->start != 0x8804000))
+	if (a52_sd1 && !of_device_is_compatible(node, "qcom,sdhci-msm-v5"))
 		return -ENODEV;
 	if (a52_sd1 && (of_property_read_bool(node, "supports-cqe") ||
 	    platform_get_resource_byname(pdev, IORESOURCE_MEM, "cqhci_ice") ||
@@ -2735,6 +2755,35 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	ret = mmc_of_parse(host->mmc);
 	if (ret)
 		goto pltfm_free;
+	if (a52_sd1) {
+		u32 width;
+
+		if (of_property_read_u32(node, "qcom,bus-width", &width) ||
+		    width != 4 || !of_find_property(node, "cd-gpios", NULL)) {
+			ret = -EINVAL;
+			goto pltfm_free;
+		}
+		host->mmc->caps |= MMC_CAP_4_BIT_DATA;
+		host->mmc->caps &= ~MMC_CAP_8_BIT_DATA;
+		host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_MMC;
+		host->mmc->f_max = 50000000;
+		msm_host->sd1_pins = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(msm_host->sd1_pins)) {
+			ret = PTR_ERR(msm_host->sd1_pins);
+			goto pltfm_free;
+		}
+		msm_host->sd1_active = pinctrl_lookup_state(msm_host->sd1_pins, "active");
+		msm_host->sd1_sleep = pinctrl_lookup_state(msm_host->sd1_pins, "sleep");
+		if (IS_ERR(msm_host->sd1_active) || IS_ERR(msm_host->sd1_sleep)) {
+			ret = IS_ERR(msm_host->sd1_active) ?
+				PTR_ERR(msm_host->sd1_active) : PTR_ERR(msm_host->sd1_sleep);
+			goto pltfm_free;
+		}
+		ret = sdhci_msm_set_pincfg(msm_host, true);
+		if (ret)
+			goto pltfm_free;
+		dev_info(&pdev->dev, "A52 SDHC R02_NATIVE_DT width=4 max_hz=50000000\n");
+	}
 
 	/*
 	 * Based on the compatible string, load the required msm host info from
@@ -2772,7 +2821,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	}
 
 	/* Setup main peripheral bus clock */
-	clk = devm_clk_get(&pdev->dev, "iface");
+	clk = devm_clk_get(&pdev->dev, a52_sd1 ? "iface_clk" : "iface");
 	if (IS_ERR(clk)) {
 		ret = PTR_ERR(clk);
 		dev_err(&pdev->dev, "Peripheral clk setup failed (%d)\n", ret);
@@ -2781,7 +2830,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	msm_host->bulk_clks[1].clk = clk;
 
 	/* Setup SDC MMC clock */
-	clk = devm_clk_get(&pdev->dev, "core");
+	clk = devm_clk_get(&pdev->dev, a52_sd1 ? "core_clk" : "core");
 	if (IS_ERR(clk)) {
 		ret = PTR_ERR(clk);
 		dev_err(&pdev->dev, "SDC MMC clk setup failed (%d)\n", ret);
@@ -2794,7 +2843,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	if (ret)
 		goto bus_clk_disable;
 
-	msm_host->opp_table = dev_pm_opp_set_clkname(&pdev->dev, "core");
+	msm_host->opp_table = dev_pm_opp_set_clkname(&pdev->dev, a52_sd1 ? "core_clk" : "core");
 	if (IS_ERR(msm_host->opp_table)) {
 		ret = PTR_ERR(msm_host->opp_table);
 		goto bus_clk_disable;
@@ -2808,7 +2857,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	}
 
 	/* Vote for maximum clock rate for maximum performance */
-	ret = dev_pm_opp_set_rate(&pdev->dev, INT_MAX);
+	ret = dev_pm_opp_set_rate(&pdev->dev, a52_sd1 ? 50000000 : INT_MAX);
 	if (ret)
 		dev_warn(&pdev->dev, "core clock boost failed\n");
 
@@ -2955,7 +3004,21 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	host->mmc_host_ops.execute_tuning = sdhci_msm_execute_tuning;
 	if (a52_sd1)
 		dev_info(&pdev->dev, "A52 SDHC ICE_DISABLED reason=SD_SLOT_NO_CQE\n");
-	if (!a52_sd1 && of_property_read_bool(node, "supports-cqe"))
+	if (a52_sd1) {
+		/* Clear capabilities after generic setup, before card scanning. */
+		ret = sdhci_setup_host(host);
+		if (!ret) {
+			host->mmc->caps &= ~(MMC_CAP_8_BIT_DATA | MMC_CAP_UHS | MMC_CAP_1_8V_DDR);
+			host->mmc->caps2 &= ~(MMC_CAP2_HS200 | MMC_CAP2_HS400 | MMC_CAP2_HS400_ES |
+				MMC_CAP2_CQE | MMC_CAP2_CQE_DCMD);
+			host->mmc->caps2 |= MMC_CAP2_NO_SDIO | MMC_CAP2_NO_MMC;
+			host->flags &= ~(SDHCI_SIGNALING_180 | SDHCI_SIGNALING_120);
+			host->mmc->f_max = min(host->mmc->f_max, 50000000U);
+			ret = __sdhci_add_host(host);
+			if (ret)
+				sdhci_cleanup_host(host);
+		}
+	} else if (of_property_read_bool(node, "supports-cqe"))
 		ret = sdhci_msm_cqe_add_host(host, pdev);
 	else
 		ret = sdhci_add_host(host);
@@ -3051,7 +3114,15 @@ static __maybe_unused int sdhci_msm_runtime_resume(struct device *dev)
 
 	dev_pm_opp_set_rate(dev, msm_host->clk_rate);
 
-	return msm_host->a52_sd1 ? 0 : sdhci_msm_ice_resume(msm_host);
+	if (msm_host->a52_sd1) {
+		ret = sdhci_msm_set_pincfg(msm_host, true);
+		if (ret) {
+			clk_bulk_disable_unprepare(ARRAY_SIZE(msm_host->bulk_clks), msm_host->bulk_clks);
+			return ret;
+		}
+		return 0;
+	}
+	return sdhci_msm_ice_resume(msm_host);
 }
 
 static const struct dev_pm_ops sdhci_msm_pm_ops = {
