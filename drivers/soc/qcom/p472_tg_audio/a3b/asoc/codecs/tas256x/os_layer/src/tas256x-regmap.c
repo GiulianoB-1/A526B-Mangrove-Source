@@ -1041,7 +1041,7 @@ static irqreturn_t tas256x_irq_handler(int irq, void *dev_id)
 
 	plat_data = (struct linux_platform *) p_tas256x->platform_data;
 	/* get IRQ status after 100 ms */
-	if (READ_ONCE(plat_data->stopping))
+	if (READ_ONCE(plat_data->stopping) || !READ_ONCE(plat_data->probe_ready))
 		return IRQ_HANDLED;
 	schedule_delayed_work(&p_tas256x->irq_work, msecs_to_jiffies(100));
 	return IRQ_HANDLED;
@@ -1323,7 +1323,7 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 			const struct i2c_device_id *id)
 {
 	struct tas256x_priv *p_tas256x;
-	struct linux_platform *plat_data;
+	struct linux_platform *plat_data = NULL;
 	int n_result = 0;
 	int i = 0;
 	struct i2c_client *left;
@@ -1502,6 +1502,7 @@ static int tas256x_i2c_probe(struct i2c_client *p_client,
 	g_p_tas256x = p_tas256x;
 	register_tas256x_reset_func(tas256x_software_reset, &s_dc_detect);
 #endif
+	WRITE_ONCE(plat_data->probe_ready, true);
 	tas256x_enable_irq(p_tas256x, true);
 	dev_info(&p_client->dev, "P487 TAS PROBE_READY channels=2 left=0x4d right=0x4c\n");
 	return 0;

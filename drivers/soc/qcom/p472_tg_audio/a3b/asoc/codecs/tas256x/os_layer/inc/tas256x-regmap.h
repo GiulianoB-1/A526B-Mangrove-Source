@@ -8,6 +8,7 @@ struct linux_platform {
 	struct regmap *regmap;
 	struct regmap *left_regmap;
 	bool stopping;
+	bool probe_ready;
 	bool irq_requested[2];
 	struct mutex irq_lock;
 	struct hrtimer mtimer;
